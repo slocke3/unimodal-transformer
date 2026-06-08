@@ -1,0 +1,49 @@
+# Base configuration for unimodal-transformer experiments
+
+run_name: base
+
+# Data
+data:
+  n_trajectories: 8000
+  r_range: [0.5, 4.0]
+  context_len: 50
+  n_bins: 64
+  traj_len: 150
+  burn_in: 0
+  train_frac: 0.8
+  val_frac: 0.1
+  batch_size: 256
+  num_workers: 2
+  seed: 42
+
+# Model
+model:
+  d_model: 128
+  n_heads: 4
+  n_layers: 4
+  dropout: 0.1
+  # d_ff defaults to 4 * d_model if null
+  d_ff: null
+
+# Training
+training:
+  lr: 3.0e-4
+  weight_decay: 1.0e-4
+  max_epochs: 40
+  patience: 8
+  grad_clip: 1.0
+  log_every: 200
+  eval_every: 1
+
+# Evaluation
+evaluation:
+  n_eval_points: 800
+  n_eval_per_r: 30
+  n_lyapunov_steps: 100000
+
+# Paths
+paths:
+  output_dir: outputs
+  checkpoint_dir: outputs/checkpoints
+  figure_dir: outputs/figures
+  cache_dir: outputs/cache

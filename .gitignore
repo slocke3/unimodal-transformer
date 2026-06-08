@@ -1,0 +1,32 @@
+# Outputs (reproducible from scratch)
+outputs/checkpoints/*.pt
+outputs/figures/*
+outputs/cache/*
+
+# Keep directory structure via .gitkeep
+!outputs/figures/.gitkeep
+!outputs/cache/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Environment
+.env
+.venv/
+env/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
