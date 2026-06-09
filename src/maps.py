@@ -120,6 +120,27 @@ def compute_lyapunov_general(map_fn, deriv_fn, param, n_steps=100_000, x0=0.4):
 
 
 # ---------------------------------------------------------------------------
+# Doubling map x -> 2x mod 1  (rigorous control)
+# ---------------------------------------------------------------------------
+# Uniformly expanding, deriv = 2 everywhere, so lambda = ln 2. With a dyadic
+# partition (n_bins a power of 2) it is an exact Markov map: the order-1
+# transition matrix IS the Ulam discretization of its Perron-Frobenius
+# operator, and the optimal-predictor cross-entropy equals ln 2 exactly. This
+# makes it the clean control for validating the operator-floor harness.
+#
+# NOTE: in float64 the orbit loses one bit of precision per step and collapses
+# to 0 after ~52 iterations. Generate only SHORT trajectories (< ~30 steps)
+# from many initial conditions when sampling it.
+
+def doubling_map(x):
+    return (2.0 * x) % 1.0
+
+
+def doubling_deriv(x):
+    return 2.0
+
+
+# ---------------------------------------------------------------------------
 # Family registry (used in generalization experiments)
 # ---------------------------------------------------------------------------
 
