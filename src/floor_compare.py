@@ -192,7 +192,12 @@ def plot_figure1(in_dist, families, floor_orders=(1,), save_path=None, figsize=(
     regressions are unstable over each family's narrow chaotic range).
     """
     import matplotlib.pyplot as plt
-    fig, axes = plt.subplots(1, 2, figsize=figsize, sharey=True)
+    fig, axes = plt.subplots(1, 2, figsize=figsize)  # independent y-axes
+
+    def _ylim_from(arrays):
+        flat = np.concatenate([np.asarray(a)[np.isfinite(a)] for a in arrays])
+        top = float(np.nanpercentile(flat, 99)) * 1.15 if len(flat) else 1.2
+        return -0.05, max(top, 0.5)
 
     # Panel 1 -- in-distribution
     ax = axes[0]
@@ -205,6 +210,7 @@ def plot_figure1(in_dist, families, floor_orders=(1,), save_path=None, figsize=(
     ax.set_xlabel(r"$\lambda$")
     ax.set_ylabel("Cross-entropy (nats)")
     ax.legend(fontsize=8, loc="upper left")
+    ax.set_ylim(*_ylim_from([in_dist["ce_tf"]] + [in_dist["ce_floor"][k] for k in floor_orders]))
 
     # Panel 2 -- out-of-family
     ax = axes[1]
@@ -218,14 +224,8 @@ def plot_figure1(in_dist, families, floor_orders=(1,), save_path=None, figsize=(
     ax.set_title("Out-of-family (zero-shot: tent / sine / cubic)")
     ax.set_xlabel(r"$\lambda$")
     ax.legend(fontsize=8, loc="upper left")
-
-    # data-driven y-limit (robust to any residual outliers)
-    cand = [in_dist["ce_tf"]] + [d["ce_tf"] for d in families]
-    cand += [pooled_floor[k] for k in floor_orders] + [in_dist["ce_floor"][k] for k in floor_orders]
-    flat = np.concatenate([np.asarray(c)[np.isfinite(c)] for c in cand])
-    y_top = float(np.nanpercentile(flat, 99)) * 1.15 if len(flat) else 1.2
-    for ax in axes:
-        ax.set_ylim(-0.05, max(y_top, 0.5))
+    ax.set_ylim(*_ylim_from([d["ce_tf"] for d in families]
+                            + [pooled_floor[k] for k in floor_orders]))
     plt.tight_layout()
     if save_path:
         plt.savefig(save_path, dpi=150, bbox_inches="tight")
