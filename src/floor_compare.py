@@ -129,6 +129,23 @@ def panel_family(family_name, floor_models, n_bins, context_len, model=None, dev
 # Plotting
 # ---------------------------------------------------------------------------
 
+def _fit_chaotic(ax, lam, ce, color="k", min_points=10):
+    """Linear fit of CE vs lambda over the chaotic regime (lambda > 0).
+
+    Mirrors evaluation.plot_ce_vs_lyapunov: dashed line + slope / R^2 label.
+    """
+    from scipy import stats
+    lam = np.asarray(lam)
+    ce = np.asarray(ce)
+    mask = (lam > 0) & np.isfinite(ce)
+    if mask.sum() < min_points:
+        return
+    slope, intercept, r_val, _, _ = stats.linregress(lam[mask], ce[mask])
+    xs = np.linspace(0.0, lam[mask].max(), 50)
+    ax.plot(xs, slope * xs + intercept, "--", color=color, lw=1.6, zorder=4,
+            label=fr"Fit (chaotic): slope={slope:.2f}, $R^2$={r_val**2:.2f}")
+
+
 def _draw_floor_and_ref(ax, lam, ce_floor, floor_orders):
     """Quadratic-fit floor line(s) (sorted by lambda) + CE=lambda reference."""
     order = np.argsort(lam)
@@ -157,6 +174,7 @@ def plot_figure1(in_dist, families, floor_orders=(1, 5), n_bins=64,
     ax = axes[0]
     ax.scatter(in_dist["lambda"], in_dist["ce_tf"], s=10, alpha=0.7,
                color="#1B2A4A", label="Transformer", zorder=3)
+    _fit_chaotic(ax, in_dist["lambda"], in_dist["ce_tf"], color="#1B2A4A")
     _draw_floor_and_ref(ax, in_dist["lambda"], in_dist["ce_floor"], floor_orders)
     ax.set_title("In-distribution (quadratic, trained $r$)")
     ax.set_xlabel(r"$\lambda$")
@@ -170,6 +188,8 @@ def plot_figure1(in_dist, families, floor_orders=(1, 5), n_bins=64,
     for d in families:
         ax.scatter(d["lambda"], d["ce_tf"], s=10, alpha=0.6,
                    color=d["color"], label=f"{d['name']} (transformer)", zorder=3)
+    all_tf = np.concatenate([d["ce_tf"] for d in families])
+    _fit_chaotic(ax, all_lam, all_tf, color="#333333")
     _draw_floor_and_ref(ax, all_lam, pooled_floor, floor_orders)
     ax.set_title("Out-of-family (zero-shot: tent / sine / cubic)")
     ax.set_xlabel(r"$\lambda$")
