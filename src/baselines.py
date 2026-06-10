@@ -17,6 +17,26 @@ Pure numpy -- no torch -- so it runs anywhere and stays fast.
 """
 import numpy as np
 
+from .maps import iterate_general, tokenize_trajectory
+
+
+def gen_token_seqs(map_fn, param, n_eval, n_bins, traj_len,
+                   burn_in=0, rng=None, x0_range=(0.05, 0.95)):
+    """Generate tokenized trajectories from a map (torch-free eval helper).
+
+    map_fn(x, param) -> next x. Returns a list of int token arrays, one per
+    sampled initial condition. Mirrors how the transformer's eval builds data,
+    so the k-gram floor can be scored on identical contexts.
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+    seqs = []
+    for _ in range(n_eval):
+        x0 = rng.uniform(*x0_range)
+        traj = iterate_general(x0, map_fn, param, burn_in + traj_len)[burn_in:]
+        seqs.append(tokenize_trajectory(traj, n_bins))
+    return seqs
+
 
 # ---------------------------------------------------------------------------
 # Windowing
