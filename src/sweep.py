@@ -22,9 +22,10 @@ import numpy as np
 
 from .maps import iterate_map, tokenize_trajectory
 
-# The reduced grid we settled on.
+# Grid. Phase 1: resolve the saturation knee between L=2 and L=8 by adding
+# L={4,5,6}, on the N we already have (2,16,64). N=128 deferred to phase 2.
 DEFAULT_NS = (2, 16, 64)
-DEFAULT_LS = (2, 8, 32, 64)
+DEFAULT_LS = (2, 4, 5, 6, 8, 32, 64)
 
 
 # ---------------------------------------------------------------------------
