@@ -1,17 +1,16 @@
 """
-Finite-memory / k-gram baselines = Ulam discretizations of the transfer operator.
+Empirical k-gram baselines for finite-memory symbolic prediction.
 
 A k-gram model estimates  P(x_{t+1} | x_{t-k+1..t})  by counting transitions in
 tokenized trajectories. For order k=1 this is the 1-step transition matrix on the
-N-bin partition -- the Ulam approximation of the Perron-Frobenius (transfer)
-operator. These models are the "operator floor": the optimal finite-memory
-symbolic predictor at a given order.
+N-bin partition -- a Ulam-style approximation of the Perron-Frobenius
+(transfer) operator. Higher orders are finite-memory symbolic predictors. Their
+held-out losses are empirical baselines, not information-theoretic floors.
 
-The point of the harness: comparing a transformer's cross-entropy against this
-floor tells us whether it does anything *beyond* finite-order transition
-counting -- especially on held-out parameters / out-of-family maps, where the
-counting tables have no entries but a model that learned the dynamics could
-still predict.
+Comparing a transformer's cross-entropy against a specified k-gram baseline
+tests what finite-order transition counting can explain. The interpretation
+depends on whether the counts are source-trained, context-matched, or fitted on
+the evaluated system.
 
 Pure numpy -- no torch -- so it runs anywhere and stays fast.
 """
@@ -26,7 +25,7 @@ def gen_token_seqs(map_fn, param, n_eval, n_bins, traj_len,
 
     map_fn(x, param) -> next x. Returns a list of int token arrays, one per
     sampled initial condition. Mirrors how the transformer's eval builds data,
-    so the k-gram floor can be scored on identical contexts.
+    so the k-gram baseline can be scored on identical contexts.
     """
     if rng is None:
         rng = np.random.default_rng()
@@ -116,7 +115,7 @@ class KGramModel:
         return np.stack([self.predict_proba(c) for c in contexts])
 
     def cross_entropy(self, contexts, targets):
-        """Mean next-token cross-entropy in nats (the operator-floor loss)."""
+        """Mean held-out next-token cross-entropy in nats."""
         probs = self.predict_proba_batch(contexts)
         p_true = probs[np.arange(len(targets)), np.asarray(targets)]
         return float(-np.log(p_true).mean())
@@ -165,12 +164,13 @@ class KGramModel:
         return float(-(pi[:, None] * T * logT).sum())
 
 
-def operator_floor_curve(train_seqs, contexts, targets, n_bins, orders, alpha=1e-3):
+def kgram_baseline_curve(train_seqs, contexts, targets, n_bins, orders, alpha=1e-3):
     """Fit k-gram models at several orders and report held-out CE/accuracy.
 
     Returns a dict: order -> {"ce": float, "acc": float}. The CE values are the
-    operator floor at each memory length; they decrease toward the true entropy
-    rate as the partition/order captures the symbolic dynamics.
+    empirical k-gram baseline at each memory length. With sufficient data the
+    corresponding population conditional entropies are non-increasing in order,
+    but finite-sample estimates need not be monotone.
     """
     out = {}
     for k in orders:
@@ -178,3 +178,7 @@ def operator_floor_curve(train_seqs, contexts, targets, n_bins, orders, alpha=1e
         out[k] = {"ce": m.cross_entropy(contexts, targets),
                   "acc": m.accuracy(contexts, targets)}
     return out
+
+
+# Backward compatibility for existing notebooks and analysis code.
+operator_floor_curve = kgram_baseline_curve

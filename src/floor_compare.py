@@ -1,20 +1,22 @@
 """
-Figure 1: transformer cross-entropy vs the operator floor (k-gram / Ulam), as a
+Figure 1: transformer cross-entropy vs per-system empirical k-gram oracles, as a
 function of the Lyapunov exponent, across generalization settings.
 
-Both the transformer and the k-gram floor are trained on the QUADRATIC family.
-We then evaluate both -- on identical test contexts -- in two panels:
+The transformer is trained on the quadratic family. At every evaluated
+parameter, each k-gram is fitted on separate trajectories from that exact
+system, making it a target-informed per-system oracle. Both predictors are then
+evaluated on identical test contexts in two panels:
 
   Panel 1  in-distribution : quadratic, r inside the training range
   Panel 2  out-of-family   : tent / sine / cubic (zero-shot transfer)
 
-The story is the gap between the transformer's CE and (a) the lambda reference
-line CE = lambda (the optimal predictor's loss in the chaotic regime) and (b)
-the quadratic-fit operator floor -- and whether that gap survives going OOD.
+The plot compares transformer CE with (a) the qualified positive-lambda
+reference and (b) the per-system empirical k-gram oracle. The oracle is not a
+zero-shot competitor and its loss is not an information-theoretic floor.
 
 torch is imported lazily (inside the one function that needs it) so this module
-and its numpy pipeline import fine even where torch is unavailable; pass
-model=None to compute the floor / lambda panels without a transformer.
+and its numpy pipeline import fine even where torch is unavailable. Pass
+model=None to compute the k-gram / lambda panels without a transformer.
 """
 import numpy as np
 
@@ -41,29 +43,27 @@ def _transformer_ce(model, contexts, targets, device):
 
 
 # ---------------------------------------------------------------------------
-# Core: per-parameter transformer + floor CE on identical contexts
+# Core: per-parameter transformer + k-gram oracle CE on identical contexts
 # ---------------------------------------------------------------------------
 
 def compute_panel(params, map_fn, lambdas, n_bins, context_len, orders=(1,),
                   model=None, device="cpu", n_eval=20, n_fit=40,
                   traj_len=150, burn_in=0, alpha=1e-3, seed=99):
-    """Per-parameter ORACLE floor + transformer CE on identical test contexts.
+    """Per-system empirical k-gram oracle + transformer CE on identical contexts.
 
     At each parameter we fit a fresh order-k k-gram on that system's own training
-    trajectories (the achievable finite-order floor / Ulam transfer operator at
-    that point), then score it -- and the transformer -- on separate held-out
-    test trajectories from the same system. So the floor is the best a counting
-    model could do *if it knew the system*, and the transformer (quadratic-
-    trained, inferring the system in-context) is compared against it.
+    trajectories, then score it and the transformer on separate held-out test
+    trajectories from the same system. The oracle is target-informed; the
+    transformer is quadratic-trained and must infer the system in context.
 
-    model=None -> transformer CE is NaN (floor/lambda still computed).
+    model=None -> transformer CE is NaN (k-gram/lambda still computed).
     """
     n = len(params)
     out = {
         "param": np.asarray(params, dtype=float),
         "lambda": np.asarray(lambdas, dtype=float),
         "ce_tf": np.full(n, np.nan),
-        "ce_floor": {k: np.empty(n) for k in orders},
+        "ce_kgram_oracle": {k: np.empty(n) for k in orders},
     }
     for i, p in enumerate(params):
         rng_fit = np.random.default_rng(seed * 100003 + i)
@@ -75,9 +75,11 @@ def compute_panel(params, map_fn, lambdas, n_bins, context_len, orders=(1,),
         if model is not None:
             out["ce_tf"][i] = _transformer_ce(model, ctx, tgt, device)
         for k in orders:
-            out["ce_floor"][k][i] = oracle[k].cross_entropy(ctx, tgt)
+            out["ce_kgram_oracle"][k][i] = oracle[k].cross_entropy(ctx, tgt)
         if (i + 1) % 25 == 0:
             print(f"    {i+1}/{n}")
+    # Backward-compatible result key for existing cached analyses.
+    out["ce_floor"] = out["ce_kgram_oracle"]
     return out
 
 
@@ -142,8 +144,7 @@ def _fit_chaotic(ax, lam, ce, color="k", min_points=10):
 
 
 def _binned_median(lam, ce, n_lam_bins=28):
-    """Median CE within equal-width lambda bins -- a smooth floor curve that
-    avoids connecting the (multivalued in lambda) per-parameter floor points."""
+    """Median CE in lambda bins, avoiding multivalued per-parameter joins."""
     lam, ce = np.asarray(lam), np.asarray(ce)
     m = np.isfinite(lam) & np.isfinite(ce)
     lam, ce = lam[m], ce[m]
@@ -160,37 +161,50 @@ def _binned_median(lam, ce, n_lam_bins=28):
     return np.array(centers), np.array(meds)
 
 
-_FLOOR_STYLE = {1: dict(color="#1D9E75", lw=2.0),
+_KGRAM_STYLE = {1: dict(color="#1D9E75", lw=2.0),
                 2: dict(color="#D85A30", lw=2.0),
                 5: dict(color="#9467bd", lw=2.0)}
 
 
-def _floor_label(k):
-    return "Transfer-operator floor (1-gram)" if k == 1 else f"{k}-gram floor"
+def _kgram_label(k):
+    return ("Per-system one-step transition oracle" if k == 1
+            else f"Per-system {k}-gram oracle")
 
 
-def _draw_floor(ax, lam, ce_floor, orders):
+def _draw_kgram_oracle(ax, lam, ce_kgram_oracle, orders):
     for k in orders:
-        c, med = _binned_median(lam, ce_floor[k])
+        c, med = _binned_median(lam, ce_kgram_oracle[k])
         if len(c):
-            ax.plot(c, med, alpha=0.9, label=_floor_label(k),
-                    **_FLOOR_STYLE.get(k, dict(lw=2.0)))
+            ax.plot(c, med, alpha=0.9, label=_kgram_label(k),
+                    **_KGRAM_STYLE.get(k, dict(lw=2.0)))
+
+
+def _oracle_results(data):
+    """Read the precise result key, with fallback for historical caches."""
+    if "ce_kgram_oracle" in data:
+        return data["ce_kgram_oracle"]
+    return data["ce_floor"]
 
 
 def _draw_ref(ax, lam_max):
     xs = np.linspace(0.0, max(lam_max, 0.01), 50)
-    ax.plot(xs, xs, "k--", lw=1.0, alpha=0.6, label=r"$CE=\lambda$ (optimal)")
+    ax.plot(xs, xs, "k--", lw=1.0, alpha=0.6,
+            label=r"$CE=\lambda^+$ (qualified reference)")
     ax.axvline(0, color="gray", lw=0.6, ls=":", alpha=0.5)
 
 
-def plot_figure1(in_dist, families, floor_orders=(1,), save_path=None, figsize=(13, 5)):
+def plot_figure1(in_dist, families, kgram_orders=(1,), save_path=None,
+                 figsize=(13, 5), floor_orders=None):
     """Two panels: in-distribution (left), out-of-family (right).
 
-    Floor = per-parameter oracle (drawn as a lambda-binned median curve).
+    The per-system oracle is drawn as a lambda-binned median curve.
     In-distribution keeps the chaotic CE-vs-lambda fit (slope / R^2); the
-    out-of-family panel shows points + floor + the lambda reference (per-family
+    out-of-family panel shows points, oracle, and lambda reference (per-family
     regressions are unstable over each family's narrow chaotic range).
     """
+    if floor_orders is not None:  # backward-compatible keyword
+        kgram_orders = floor_orders
+
     import matplotlib.pyplot as plt
     fig, axes = plt.subplots(1, 2, figsize=figsize)  # independent y-axes
 
@@ -204,28 +218,32 @@ def plot_figure1(in_dist, families, floor_orders=(1,), save_path=None, figsize=(
     ax.scatter(in_dist["lambda"], in_dist["ce_tf"], s=12, alpha=0.7,
                color="#1B2A4A", label="Transformer", zorder=3)
     _fit_chaotic(ax, in_dist["lambda"], in_dist["ce_tf"], color="#1B2A4A")
-    _draw_floor(ax, in_dist["lambda"], in_dist["ce_floor"], floor_orders)
+    in_dist_oracle = _oracle_results(in_dist)
+    _draw_kgram_oracle(ax, in_dist["lambda"], in_dist_oracle, kgram_orders)
     _draw_ref(ax, np.nanmax(in_dist["lambda"]))
     ax.set_title("In-distribution (quadratic, trained $r$)")
     ax.set_xlabel(r"$\lambda$")
     ax.set_ylabel("Cross-entropy (nats)")
     ax.legend(fontsize=8, loc="upper left")
-    ax.set_ylim(*_ylim_from([in_dist["ce_tf"]] + [in_dist["ce_floor"][k] for k in floor_orders]))
+    ax.set_ylim(*_ylim_from([in_dist["ce_tf"]] + [in_dist_oracle[k] for k in kgram_orders]))
 
     # Panel 2 -- out-of-family
     ax = axes[1]
     all_lam = np.concatenate([d["lambda"] for d in families])
-    pooled_floor = {k: np.concatenate([d["ce_floor"][k] for d in families]) for k in floor_orders}
+    pooled_kgram_oracle = {
+        k: np.concatenate([_oracle_results(d)[k] for d in families])
+        for k in kgram_orders
+    }
     for d in families:
         ax.scatter(d["lambda"], d["ce_tf"], s=12, alpha=0.6,
                    color=d["color"], label=f"{d['name']}", zorder=3)
-    _draw_floor(ax, all_lam, pooled_floor, floor_orders)
+    _draw_kgram_oracle(ax, all_lam, pooled_kgram_oracle, kgram_orders)
     _draw_ref(ax, np.nanmax(all_lam))
-    ax.set_title("Out-of-family (zero-shot: tent / sine / cubic)")
+    ax.set_title("Out-of-family (zero-shot transformer; target-informed oracle)")
     ax.set_xlabel(r"$\lambda$")
     ax.legend(fontsize=8, loc="upper left")
     ax.set_ylim(*_ylim_from([d["ce_tf"] for d in families]
-                            + [pooled_floor[k] for k in floor_orders]))
+                            + [pooled_kgram_oracle[k] for k in kgram_orders]))
     plt.tight_layout()
     if save_path:
         plt.savefig(save_path, dpi=150, bbox_inches="tight")
@@ -237,23 +255,25 @@ def plot_figure1(in_dist, families, floor_orders=(1,), save_path=None, figsize=(
 # ---------------------------------------------------------------------------
 
 def run_figure1(model, device, n_bins, context_len, burn_in=0,
-                floor_orders=(1,), families=("tent", "sine", "cubic"),
+                kgram_orders=(1,), families=("tent", "sine", "cubic"),
                 n_eval=20, n_fit=40, traj_len=150, in_dist_lambdas=None, r_grid=None,
-                n_params=100, lam_steps=20000, save_path=None, seed=99):
-    """Compute both panels (per-parameter oracle floor) and plot.
+                n_params=100, lam_steps=20000, save_path=None, seed=99,
+                floor_orders=None):
+    """Compute both panels with per-system empirical k-gram oracles and plot.
 
-    Returns (fig, in_dist, family_data). floor_orders=(1,) gives the order-1
-    transfer-operator floor; add 2 for a higher-order line (needs larger n_fit).
+    ``floor_orders`` remains as a backward-compatible keyword alias.
     """
+    if floor_orders is not None:
+        kgram_orders = floor_orders
     in_dist = panel_in_distribution(
-        n_bins, context_len, orders=floor_orders, model=model, device=device,
+        n_bins, context_len, orders=kgram_orders, model=model, device=device,
         r_grid=r_grid, lambdas=in_dist_lambdas, n_eval=n_eval, n_fit=n_fit,
         traj_len=traj_len, burn_in=burn_in, lam_steps=lam_steps, seed=seed)
     fam_data = [
-        panel_family(name, n_bins, context_len, orders=floor_orders, model=model,
+        panel_family(name, n_bins, context_len, orders=kgram_orders, model=model,
                      device=device, n_params=n_params, n_eval=n_eval, n_fit=n_fit,
                      traj_len=traj_len, burn_in=burn_in, lam_steps=lam_steps, seed=seed)
         for name in families
     ]
-    fig = plot_figure1(in_dist, fam_data, floor_orders=floor_orders, save_path=save_path)
+    fig = plot_figure1(in_dist, fam_data, kgram_orders=kgram_orders, save_path=save_path)
     return fig, in_dist, fam_data

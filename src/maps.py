@@ -126,7 +126,7 @@ def compute_lyapunov_general(map_fn, deriv_fn, param, n_steps=100_000, x0=0.4):
 # partition (n_bins a power of 2) it is an exact Markov map: the order-1
 # transition matrix IS the Ulam discretization of its Perron-Frobenius
 # operator, and the optimal-predictor cross-entropy equals ln 2 exactly. This
-# makes it the clean control for validating the operator-floor harness.
+# makes it the clean control for validating the empirical k-gram baseline.
 #
 # NOTE: in float64 the orbit loses one bit of precision per step and collapses
 # to 0 after ~52 iterations. Generate only SHORT trajectories (< ~30 steps)
