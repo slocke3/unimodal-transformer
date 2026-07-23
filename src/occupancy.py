@@ -131,6 +131,45 @@ def plot_transition_diagnostic(result, save_path=None):
     return fig
 
 
+def plot_transition_overlay(result, save_path=None):
+    """Overlay the logistic support and the tent moves on the SAME axes so the
+    non-overlap is visible. Left: logistic (light) vs tent (red = off-support).
+    Right: logistic (light) vs h(tent) (bent onto the support)."""
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import ListedColormap
+    from matplotlib.patches import Patch
+    N = result["n_bins"]
+    Tt, Th, Tp = result["T_tent"], result["T_tent_h"], result["T_pool"]
+    S = Tp > 0
+    # 0 neither, 1 logistic-only, 2 overlap, 3 map-off-support
+    cmap = ListedColormap(["white", "#Bcd4ef".replace("Bc", "bc"), "#1B2A4A", "#D62728"])
+
+    def layer(M):
+        c = np.zeros((N, N))
+        c[S & ~M] = 1
+        c[S & M] = 2
+        c[~S & M] = 3
+        return c.T  # current on x, next on y
+
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(11.5, 5.2))
+    a1.imshow(layer(Tt > 0), origin="lower", cmap=cmap, vmin=0, vmax=3, aspect="auto")
+    a1.set_title(f"Tent vs logistic: {result['unseen_tent']:.0%} of tent's moves\n"
+                 f"fall OUTSIDE the logistic support (red)")
+    a2.imshow(layer(Th > 0), origin="lower", cmap=cmap, vmin=0, vmax=3, aspect="auto")
+    a2.set_title(f"After conjugacy $h$: {result['unseen_tent_h']:.0%} outside\n"
+                 f"($h$(tent) lands on the logistic parabola)")
+    legend = [Patch(color="#bcd4ef", label="logistic support (all $r$)"),
+              Patch(color="#1B2A4A", label="overlap"),
+              Patch(color="#D62728", label="map move, unseen in training")]
+    for ax in (a1, a2):
+        ax.set_xlabel("current bin $i$"); ax.set_ylabel("next bin $j$")
+    a1.legend(handles=legend, fontsize=8, loc="upper right", framealpha=0.9)
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches="tight")
+    return fig
+
+
 def run_occupancy_diagnostic(n_bins=64, traj_len=25, seed=0):
     """Compute the three checks. Returns a dict of arrays/scalars for plotting."""
     train_r = np.linspace(0.5, 4.0, 200)
