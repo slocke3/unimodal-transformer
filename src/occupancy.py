@@ -105,7 +105,8 @@ def plot_transition_diagnostic(result, save_path=None):
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 4.8))
 
-    axes[0].imshow(seen_pool, origin="lower", cmap="Greys", aspect="auto")
+    # transpose so current bin i is on x, next bin j is on y (reads as j = f(i))
+    axes[0].imshow(seen_pool.T, origin="lower", cmap="Greys", aspect="auto")
     axes[0].set_title(f"Logistic pooled (all $r$): support\n({seen_pool.mean():.0%} of cells ever used)")
 
     # tent: 0=absent, 1=seen-in-pool, 2=UNSEEN-in-pool
@@ -113,17 +114,17 @@ def plot_transition_diagnostic(result, save_path=None):
     cat[(Tt > 0) & seen_pool] = 1
     cat[(Tt > 0) & ~seen_pool] = 2
     cmap = ListedColormap(["white", "#999999", "#D62728"])
-    axes[1].imshow(cat, origin="lower", cmap=cmap, vmin=0, vmax=2, aspect="auto")
+    axes[1].imshow(cat.T, origin="lower", cmap=cmap, vmin=0, vmax=2, aspect="auto")
     axes[1].set_title(f"Tent moves: red = UNSEEN in training\n({result['unseen_tent']:.0%} of tent's transition mass)")
 
     cath = np.zeros((N, N))
     cath[(Th > 0) & seen_pool] = 1
     cath[(Th > 0) & ~seen_pool] = 2
-    axes[2].imshow(cath, origin="lower", cmap=cmap, vmin=0, vmax=2, aspect="auto")
+    axes[2].imshow(cath.T, origin="lower", cmap=cmap, vmin=0, vmax=2, aspect="auto")
     axes[2].set_title(f"$h$(tent) moves after conjugacy\n({result['unseen_tent_h']:.0%} unseen -- the fix)")
 
     for ax in axes:
-        ax.set_xlabel("next bin $j$"); ax.set_ylabel("current bin $i$")
+        ax.set_xlabel("current bin $i$"); ax.set_ylabel("next bin $j$")
     plt.tight_layout()
     if save_path:
         plt.savefig(save_path, dpi=150, bbox_inches="tight")
