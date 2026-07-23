@@ -102,6 +102,41 @@ def run_occupancy_diagnostic(n_bins=64, traj_len=25, seed=0):
     return out
 
 
+def _windows_from_orbits(orbits, n_bins, context_len):
+    ctx, tgt = [], []
+    for o in orbits:
+        tok = tokenize_trajectory(np.asarray(o), n_bins)
+        for t in range(len(tok) - context_len - 1):
+            ctx.append(tok[t:t + context_len]); tgt.append(tok[t + context_len])
+    return np.asarray(ctx), np.asarray(tgt)
+
+
+def conjugacy_ce_test(model, device, n_bins, eval_context=30,
+                      n_traj=3000, traj_len=35, seed=0):
+    """Model-side confirmation: cross-entropy of the (quadratic-trained) model on
+    raw tent vs conjugacy-mapped h(tent) vs logistic r=4.
+
+    eval_context (30) is < the base context length (50) so tent orbits stay
+    within the float precision budget (~52 steps); the model accepts shorter
+    contexts. Expect raw tent >> h(tent) ~ logistic r=4.
+    """
+    import torch
+    import torch.nn as nn
+    crit = nn.CrossEntropyLoss()
+
+    def ce(orbits):
+        ctx, tgt = _windows_from_orbits(orbits, n_bins, eval_context)
+        with torch.no_grad():
+            c = torch.as_tensor(ctx, dtype=torch.long, device=device)
+            t = torch.as_tensor(tgt, dtype=torch.long, device=device)
+            return float(crit(model(c), t).item())
+
+    tent = _tent_orbits(n_traj, traj_len, seed)
+    tent_h = [conjugacy_h(o) for o in tent]
+    log4 = _logistic_orbits([4.0], n_traj, traj_len, burn_in=50, seed=seed + 1)
+    return {"raw_tent": ce(tent), "h_tent": ce(tent_h), "logistic_r4": ce(log4)}
+
+
 def plot_occupancy(result, save_path=None):
     import matplotlib.pyplot as plt
     occ, N = result["occ"], result["n_bins"]
