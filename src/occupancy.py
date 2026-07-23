@@ -71,6 +71,65 @@ def unseen_transition_mass(T_test, T_train):
     return float(unseen / total)
 
 
+def transition_diagnostic(n_bins=64, traj_len=25, seed=0):
+    """Return the transition matrices needed to *visualize* the 78% unseen mass:
+    tent's moves, and the pooled-logistic (all r) transition support they are
+    scored against. Also the h(tent) control."""
+    train_r = np.linspace(0.5, 4.0, 200)
+    tent = _tent_orbits(n_traj=6000, traj_len=traj_len, seed=seed)
+    tent_h = [conjugacy_h(o) for o in tent]
+    log_pool = _logistic_orbits(train_r, n_per=30, traj_len=150, burn_in=50, seed=seed + 2)
+
+    T_tent = transition_matrix_counts(tent, n_bins)
+    T_tenth = transition_matrix_counts(tent_h, n_bins)
+    T_pool = transition_matrix_counts(log_pool, n_bins)
+    return {
+        "n_bins": n_bins,
+        "T_tent": T_tent, "T_tent_h": T_tenth, "T_pool": T_pool,
+        "unseen_tent": unseen_transition_mass(T_tent, T_pool),
+        "unseen_tent_h": unseen_transition_mass(T_tenth, T_pool),
+    }
+
+
+def plot_transition_diagnostic(result, save_path=None):
+    """Three panels of the (i -> j) transition plane at bin resolution N:
+      (1) pooled-logistic support (every move any training r makes),
+      (2) tent's moves colored seen (grey) vs UNSEEN-in-training (red),
+      (3) h(tent)'s moves -- all seen (the conjugacy fix).
+    The red mass in panel 2 is the 78%."""
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import ListedColormap
+    N = result["n_bins"]
+    Tt, Th, Tp = result["T_tent"], result["T_tent_h"], result["T_pool"]
+    seen_pool = Tp > 0
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.8))
+
+    axes[0].imshow(seen_pool, origin="lower", cmap="Greys", aspect="auto")
+    axes[0].set_title(f"Logistic pooled (all $r$): support\n({seen_pool.mean():.0%} of cells ever used)")
+
+    # tent: 0=absent, 1=seen-in-pool, 2=UNSEEN-in-pool
+    cat = np.zeros((N, N))
+    cat[(Tt > 0) & seen_pool] = 1
+    cat[(Tt > 0) & ~seen_pool] = 2
+    cmap = ListedColormap(["white", "#999999", "#D62728"])
+    axes[1].imshow(cat, origin="lower", cmap=cmap, vmin=0, vmax=2, aspect="auto")
+    axes[1].set_title(f"Tent moves: red = UNSEEN in training\n({result['unseen_tent']:.0%} of tent's transition mass)")
+
+    cath = np.zeros((N, N))
+    cath[(Th > 0) & seen_pool] = 1
+    cath[(Th > 0) & ~seen_pool] = 2
+    axes[2].imshow(cath, origin="lower", cmap=cmap, vmin=0, vmax=2, aspect="auto")
+    axes[2].set_title(f"$h$(tent) moves after conjugacy\n({result['unseen_tent_h']:.0%} unseen -- the fix)")
+
+    for ax in axes:
+        ax.set_xlabel("next bin $j$"); ax.set_ylabel("current bin $i$")
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=150, bbox_inches="tight")
+    return fig
+
+
 def run_occupancy_diagnostic(n_bins=64, traj_len=25, seed=0):
     """Compute the three checks. Returns a dict of arrays/scalars for plotting."""
     train_r = np.linspace(0.5, 4.0, 200)
