@@ -223,12 +223,15 @@ def conjugacy_ce_test(model, device, n_bins, eval_context=30,
     import torch.nn as nn
     crit = nn.CrossEntropyLoss()
 
-    def ce(orbits):
+    def ce(orbits, batch_size=2048):
         ctx, tgt = _windows_from_orbits(orbits, n_bins, eval_context)
+        total, n = 0.0, len(tgt)
         with torch.no_grad():
-            c = torch.as_tensor(ctx, dtype=torch.long, device=device)
-            t = torch.as_tensor(tgt, dtype=torch.long, device=device)
-            return float(crit(model(c), t).item())
+            for i in range(0, n, batch_size):
+                c = torch.as_tensor(ctx[i:i + batch_size], dtype=torch.long, device=device)
+                t = torch.as_tensor(tgt[i:i + batch_size], dtype=torch.long, device=device)
+                total += float(nn.CrossEntropyLoss(reduction="sum")(model(c), t).item())
+        return total / max(n, 1)
 
     tent = _tent_orbits(n_traj, traj_len, seed)
     tent_h = [conjugacy_h(o) for o in tent]

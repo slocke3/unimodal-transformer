@@ -35,15 +35,19 @@ def warp_h(x, eps):
     return (1.0 - eps) * x + eps * (2.0 / np.pi) * np.arcsin(np.sqrt(x))
 
 
-def _ce_on_orbits(model, orbits, n_bins, context_len, device):
+def _ce_on_orbits(model, orbits, n_bins, context_len, device, batch_size=2048):
+    """Mean next-token CE, batched over windows to avoid CUDA OOM."""
     import torch
     import torch.nn as nn
     ctx, tgt = _windows_from_orbits(orbits, n_bins, context_len)
-    crit = nn.CrossEntropyLoss()
+    crit = nn.CrossEntropyLoss(reduction="sum")
+    total, n = 0.0, len(tgt)
     with torch.no_grad():
-        c = torch.as_tensor(ctx, dtype=torch.long, device=device)
-        t = torch.as_tensor(tgt, dtype=torch.long, device=device)
-        return float(crit(model(c), t).item())
+        for i in range(0, n, batch_size):
+            c = torch.as_tensor(ctx[i:i + batch_size], dtype=torch.long, device=device)
+            t = torch.as_tensor(tgt[i:i + batch_size], dtype=torch.long, device=device)
+            total += float(crit(model(c), t).item())
+    return total / max(n, 1)
 
 
 def graded_density_transfer(model, device, n_bins=64, eval_context=50,
