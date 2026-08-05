@@ -97,7 +97,7 @@ def main():
     p.add_argument("--context_len", type=int, default=50)
     p.add_argument("--n_bins", type=int, default=64)
     p.add_argument("--traj_len", type=int, default=150)
-    p.add_argument("--burn_in", type=int, default=50)
+    p.add_argument("--burn_in", type=int, default=0)
     p.add_argument("--n_train_traj", type=int, default=8000,
                    help="TOTAL training trajectories, split evenly over the m r-values")
     p.add_argument("--val_frac", type=float, default=0.15)

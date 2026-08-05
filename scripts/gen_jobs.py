@@ -33,7 +33,12 @@ def main():
                     default=["uniform_r", "uniform_lambda", "chaotic", "bifurcation"])
     ap.add_argument("--lo", type=float, default=0.5)
     ap.add_argument("--hi", type=float, default=4.0)
-    ap.add_argument("--n_train_traj", type=int, default=8000)
+    ap.add_argument("--n_train_traj", type=int, default=8000,
+                    help="strategy mode only: total training trajectories")
+    ap.add_argument("--base_n_traj", type=int, default=8000,
+                    help="window mode: base run size; r-density = base_n_traj/(hi-lo)")
+    ap.add_argument("--traj_per_r", type=int, default=1,
+                    help="window mode: trajectories per r (base run uses 1)")
     ap.add_argument("--context_len", type=int, default=50)
     ap.add_argument("--n_bins", type=int, default=64)
     ap.add_argument("--out_base", default="runs")
@@ -45,14 +50,20 @@ def main():
     lines = []
 
     if a.mode == "window":
+        # density-matched to the base run: r-count = density * width, 1 traj/r,
+        # so each window model == the base model restricted to [start, start+w].
+        density = a.base_n_traj / (a.hi - a.lo)
         for w in a.widths:
+            m = max(2, round(density * w))
+            n_traj = a.traj_per_r * m
+            win_common = (f"--n_train_traj {n_traj} --context_len {a.context_len} "
+                          f"--n_bins {a.n_bins} --full_lo {a.lo} --full_hi {a.hi}")
             for s in tile_starts(w, a.lo, a.hi):
-                for m in a.ms:
-                    for seed in a.seeds:
-                        name = f"win_w{w:g}_s{s:.3f}_m{m}_seed{seed}"
-                        lines.append(
-                            f"--placement uniform_r --start {s:.4f} --width {w:g} "
-                            f"--m {m} --seed {seed} {common} --out_dir {a.out_base}/{name}")
+                for seed in a.seeds:
+                    name = f"win_w{w:g}_s{s:.3f}_seed{seed}"
+                    lines.append(
+                        f"--placement uniform_r_random --start {s:.4f} --width {w:g} "
+                        f"--m {m} --seed {seed} {win_common} --out_dir {a.out_base}/{name}")
     else:
         span = a.hi - a.lo
         for pl in a.placements:
