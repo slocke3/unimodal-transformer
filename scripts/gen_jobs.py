@@ -6,7 +6,7 @@ Torch-free -- run on the login node.
 
 Window mode (experiment 1: extrapolation / sliding window):
     tile [lo, hi] into non-overlapping windows of each --widths, sweep --ms/--seeds.
-    python scripts/gen_jobs.py --mode window --widths 0.4 0.8 1.0 --ms 8
+    python scripts/gen_jobs.py --mode window --widths 0.125 0.25 0.5 1.0 --ms 8
 
 Strategy mode (experiment 2: informative-prompt placements over the full range):
     python scripts/gen_jobs.py --mode strategy \
@@ -26,7 +26,7 @@ def tile_starts(width, lo, hi):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--mode", choices=["window", "strategy"], default="window")
-    ap.add_argument("--widths", type=float, nargs="+", default=[0.4, 0.8, 1.0])
+    ap.add_argument("--widths", type=float, nargs="+", default=[0.125, 0.25, 0.5, 1.0])
     ap.add_argument("--ms", type=int, nargs="+", default=[8])
     ap.add_argument("--seeds", type=int, nargs="+", default=[0])
     ap.add_argument("--placements", nargs="+",
