@@ -54,7 +54,8 @@ is tiny (~0.8 M params), so 16 GB is generous; 1 h is comfortably above the
 Always confirm the env + timing with a single task first:
 
 ```bash
-python scripts/gen_jobs.py --mode window --widths 0.4 --ms 8   # writes jobs.txt
+python scripts/gen_jobs.py --mode window --widths 0.4 --n_train_traj 8000
+# writes jobs.txt
 mkdir -p logs runs
 sbatch --array=1-1 scripts/run_array.slurm                     # just task 1
 squeue -u $USER                                                # watch it
@@ -70,11 +71,12 @@ SLURM script before the big array.
 
 ```bash
 # experiment 1 — sliding window (extrapolation):
-python scripts/gen_jobs.py --mode window --widths 0.4 0.8 1.0 --ms 8 16
-#   -> prints e.g. "wrote 36 jobs" and the exact sbatch line
+python scripts/gen_jobs.py --mode window \
+    --widths 1.0 0.5 0.25 0.125 --n_train_traj 8000
+#   -> writes 53 jobs and prints the exact sbatch line
 
 mkdir -p logs runs
-sbatch --array=1-36%20 scripts/run_array.slurm      # %20 = at most 20 concurrent
+sbatch --array=1-53%20 scripts/run_array.slurm      # %20 = at most 20 concurrent
 ```
 
 `%20` throttles concurrency to be polite on a shared cluster — raise/lower to
@@ -119,9 +121,9 @@ re-evaluate models later).
 | `scripts/run_array.slurm` | array driver: task N runs line N of `jobs.txt`. |
 
 Key run knobs (defaults in parentheses): `--context_len (50)`, `--n_bins (64)`,
-`--n_train_traj (8000, total, split over m)`, `--r_eval_points (300)`. Total
-training data is held fixed via `--n_train_traj`, so varying `m` changes *where*
-the training r's are, not *how much* data.
+`--n_train_traj (8000 total per job, split over m)`, `--r_eval_points (300)`.
+Total training data is held fixed via `--n_train_traj`, so varying `m` changes
+*where* the training r's are, not *how much* data.
 
 ## eval_per_r.npz contents
 
