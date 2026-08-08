@@ -5,8 +5,11 @@ argument string. Line number N == SLURM_ARRAY_TASK_ID (see run_array.slurm).
 Torch-free -- run on the login node.
 
 Window mode (experiment 1: extrapolation / sliding window):
-    tile [lo, hi] into non-overlapping windows of each --widths, sweep --ms/--seeds.
-    python scripts/gen_jobs.py --mode window --widths 0.125 0.25 0.5 1.0 --ms 8
+    tile [lo, hi] into non-overlapping windows of each --widths.  Each window
+    receives --n_train_traj total trajectories, distributed over an r-grid whose
+    density is set by --base_n_traj.
+    python scripts/gen_jobs.py --mode window --widths 0.125 0.25 0.5 1.0 \
+        --n_train_traj 8000
 
 Strategy mode (experiment 2: informative-prompt placements over the full range):
     python scripts/gen_jobs.py --mode strategy \
@@ -34,11 +37,9 @@ def main():
     ap.add_argument("--lo", type=float, default=0.5)
     ap.add_argument("--hi", type=float, default=4.0)
     ap.add_argument("--n_train_traj", type=int, default=8000,
-                    help="strategy mode only: total training trajectories")
+                    help="total training trajectories per job")
     ap.add_argument("--base_n_traj", type=int, default=8000,
-                    help="window mode: base run size; r-density = base_n_traj/(hi-lo)")
-    ap.add_argument("--traj_per_r", type=int, default=1,
-                    help="window mode: trajectories per r (base run uses 1)")
+                    help="window mode: r-density = base_n_traj/(hi-lo)")
     ap.add_argument("--context_len", type=int, default=50)
     ap.add_argument("--n_bins", type=int, default=64)
     ap.add_argument("--out_base", default="runs")
@@ -50,13 +51,12 @@ def main():
     lines = []
 
     if a.mode == "window":
-        # density-matched to the base run: r-count = density * width, 1 traj/r,
-        # so each window model == the base model restricted to [start, start+w].
+        # Preserve a common r-value density while holding each window's total
+        # trajectory budget fixed at --n_train_traj.
         density = a.base_n_traj / (a.hi - a.lo)
         for w in a.widths:
             m = max(2, round(density * w))
-            n_traj = a.traj_per_r * m
-            win_common = (f"--n_train_traj {n_traj} --context_len {a.context_len} "
+            win_common = (f"--n_train_traj {a.n_train_traj} --context_len {a.context_len} "
                           f"--n_bins {a.n_bins} --full_lo {a.lo} --full_hi {a.hi}")
             for s in tile_starts(w, a.lo, a.hi):
                 for seed in a.seeds:
@@ -81,7 +81,8 @@ def main():
     if a.mode == "window":
         for w in a.widths:
             print(f"  width {w:g}: {len(tile_starts(w, a.lo, a.hi))} windows "
-                  f"x {len(a.ms)} m x {len(a.seeds)} seed")
+                  f"(m={max(2, round(a.base_n_traj / (a.hi - a.lo) * w))}) "
+                  f"x {len(a.seeds)} seed")
     print(f"\nsubmit with:\n  mkdir -p logs {a.out_base}\n"
           f"  sbatch --array=1-{len(lines)} scripts/run_array.slurm")
 

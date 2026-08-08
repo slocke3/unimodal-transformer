@@ -16,19 +16,20 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:1
 #SBATCH --mem=16G
-#SBATCH --time=01:00:00
+#SBATCH --time=01:00:03
 
-set -euo pipefail
+set -eo pipefail
 
 # --- environment (ADJUST FOR DELLA) ----------------------------------------
-# della: `module load anaconda3/<version>` then activate the project env that
-# has torch + numpy. Confirm the exact module name with `module avail anaconda`.
+# Della's torch2 environment is provided through the 2022.5 Anaconda module.
 module purge
-module load anaconda3/2024.6 || module load anaconda3
-conda activate unimodal        # <- the env you created for this project
+module load anaconda3/2022.5
+source "$(conda info --base)/etc/profile.d/conda.sh"
+conda activate torch2          # <- project environment with PyTorch
 
 cd "${SLURM_SUBMIT_DIR}"
 export PYTHONUNBUFFERED=1
+export PYTHONPATH="${SLURM_SUBMIT_DIR}:${PYTHONPATH:-}"
 
 JOBS_FILE="${JOBS_FILE:-jobs.txt}"
 ARGS=$(sed -n "${SLURM_ARRAY_TASK_ID}p" "${JOBS_FILE}")

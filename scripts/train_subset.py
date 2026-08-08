@@ -127,7 +127,11 @@ def main():
     train_r = np.asarray(place_r(args.placement, args.m, args.start, args.width,
                                  seed=args.seed, full_range=(args.full_lo, args.full_hi)),
                          dtype=float)
-    n_per_r = max(1, args.n_train_traj // len(train_r))
+    n_per_r, n_extra_r = divmod(args.n_train_traj, len(train_r))
+    if n_per_r < 1:
+        raise ValueError(
+            f"n_train_traj ({args.n_train_traj}) must be at least m ({len(train_r)})"
+        )
     train_r_lo, train_r_hi = float(train_r.min()), float(train_r.max())
 
     # torch imports after arg parsing (fast --help on the login node)
@@ -140,9 +144,13 @@ def main():
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    # expand: n_per_r trajectories per training r; split into train/val by trajectory
+    # Expand to exactly the requested total, distributing remainder trajectories
+    # across randomly selected r-values; then split by trajectory.
     rng = np.random.default_rng(args.seed)
-    all_r = np.repeat(train_r, n_per_r)
+    n_per_r_values = np.full(len(train_r), n_per_r, dtype=int)
+    if n_extra_r:
+        n_per_r_values[rng.permutation(len(train_r))[:n_extra_r]] += 1
+    all_r = np.repeat(train_r, n_per_r_values)
     rng.shuffle(all_r)
     n_val = int(args.val_frac * len(all_r))
     val_r, tr_r = all_r[:n_val], all_r[n_val:]
@@ -166,7 +174,8 @@ def main():
                          save_dir=args.out_dir)
     trainer = Trainer(model, train_loader, val_loader, config=tcfg, run_name="best")
     print(f"[train_subset] placement={args.placement} m={args.m} "
-          f"window=[{train_r_lo:.3f},{train_r_hi:.3f}] n_per_r={n_per_r} device={device}", flush=True)
+          f"window=[{train_r_lo:.3f},{train_r_hi:.3f}] n_train={len(all_r)} "
+          f"n_per_r={n_per_r}{'+1' if n_extra_r else ''} device={device}", flush=True)
     history = trainer.train()
     trainer.load_best()
 
@@ -187,6 +196,7 @@ def main():
         json.dump(history, f)
     with open(os.path.join(args.out_dir, "params.json"), "w") as f:
         json.dump({**vars(args), "train_r": train_r.tolist(), "n_per_r": n_per_r,
+                   "n_extra_r": n_extra_r, "n_train_traj_actual": len(all_r),
                    "train_r_lo": train_r_lo, "train_r_hi": train_r_hi,
                    "n_params": model.count_parameters(),
                    "wall_sec": round(time.time() - t0, 1)}, f, indent=2)
