@@ -40,8 +40,18 @@ class DiscreteMapDataset(Dataset):
                 targets_list.append(tokens[t + context_len])
                 r_labels_list.append(rs[i])
 
-        self.contexts = torch.tensor(np.array(contexts_list), dtype=torch.long)
-        self.targets  = torch.tensor(np.array(targets_list), dtype=torch.long)
+        contexts = np.array(contexts_list)
+        targets = np.array(targets_list)
+        # Histogram of the token exposures in one pass through this dataset.
+        # Positions repeated across sliding contexts are intentionally counted
+        # repeatedly because the model sees each occurrence.
+        self.token_counts = (
+            np.bincount(contexts.reshape(-1), minlength=n_bins)
+            + np.bincount(targets, minlength=n_bins)
+        ).astype(np.int64)
+
+        self.contexts = torch.tensor(contexts, dtype=torch.long)
+        self.targets  = torch.tensor(targets, dtype=torch.long)
         self.r_labels = torch.tensor(np.array(r_labels_list), dtype=torch.float32)
 
     def __len__(self):

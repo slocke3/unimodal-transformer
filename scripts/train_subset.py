@@ -22,7 +22,8 @@ Outputs (in --out_dir):
   params.json     the full run spec + resolved training r-values
   best.pt         best-val checkpoint
   history.json    train/val loss curves
-  eval_per_r.npz  r_grid, ce_per_r, acc_per_r, in_window mask  (the key result)
+  eval_per_r.npz  performance plus train/eval x-position histograms
+  position_hist_overlap.png  overlaid aggregate train/eval occupancy
 
 Example (one job):
   python scripts/train_subset.py --placement uniform_r --start 0.5 --width 0.4 \
@@ -140,8 +141,13 @@ def main():
     from src.dataset import DiscreteMapDataset
     from src.model import DiscreteTrajectoryTransformer
     from src.trainer import Trainer, TrainerConfig
-    from src.evaluation import evaluate_per_r
+    from src.evaluation import (
+        evaluate_per_r, histogram_overlap, plot_position_histogram_overlap,
+    )
 
+    torch.manual_seed(args.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(args.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # Expand to exactly the requested total, distributing remainder trajectories
@@ -164,6 +170,7 @@ def main():
 
     train_loader = loader(tr_r, True, args.seed)
     val_loader = loader(val_r, False, args.seed + 1)
+    train_token_hist = train_loader.dataset.token_counts.copy()
 
     model = DiscreteTrajectoryTransformer(
         n_bins=args.n_bins, context_len=args.context_len, d_model=args.d_model,
@@ -181,17 +188,40 @@ def main():
 
     # -- eval across the WHOLE family (in-window + complement) ---------------
     r_grid = np.linspace(args.full_lo, args.full_hi, args.r_eval_points)
-    ce_per_r, acc_per_r = evaluate_per_r(
+    ce_per_r, acc_per_r, eval_token_hist_per_r = evaluate_per_r(
         model=model, r_grid=r_grid, device=device, context_len=args.context_len,
         n_bins=args.n_bins, burn_in=args.burn_in, n_eval_per_r=args.n_eval_per_r,
-        traj_len=args.traj_len, seed=args.seed + 7)
+        traj_len=args.traj_len, seed=args.seed + 7, return_histograms=True)
+    eval_token_hist = eval_token_hist_per_r.sum(axis=0)
+    hist_overlap_per_r = np.array([
+        histogram_overlap(train_token_hist, counts)
+        for counts in eval_token_hist_per_r
+    ])
+    aggregate_hist_overlap = histogram_overlap(train_token_hist, eval_token_hist)
+    x_bin_edges = np.linspace(0.0, 1.0, args.n_bins + 1)
 
-    # in-window mask (for the sliding-window / extrapolation analysis)
-    in_window = (r_grid >= train_r_lo - 1e-9) & (r_grid <= train_r_hi + 1e-9)
+    # For uniform interval sampling, use the requested interval rather than
+    # the extrema of a finite random draw. Invariant-guided placements retain
+    # their actual sampled range.
+    if args.placement in {"uniform_r", "uniform_r_random"}:
+        interval_lo, interval_hi = args.start, args.start + args.width
+    else:
+        interval_lo, interval_hi = train_r_lo, train_r_hi
+    in_window = ((r_grid >= interval_lo - 1e-9)
+                 & (r_grid <= interval_hi + 1e-9))
 
     np.savez(os.path.join(args.out_dir, "eval_per_r.npz"),
              r_grid=r_grid, ce_per_r=ce_per_r, acc_per_r=acc_per_r,
-             in_window=in_window, train_r=train_r)
+             in_window=in_window, train_r=train_r,
+             x_bin_edges=x_bin_edges, train_token_hist=train_token_hist,
+             eval_token_hist=eval_token_hist,
+             eval_token_hist_per_r=eval_token_hist_per_r,
+             hist_overlap_per_r=hist_overlap_per_r,
+             aggregate_hist_overlap=aggregate_hist_overlap)
+    plot_position_histogram_overlap(
+        train_token_hist, eval_token_hist, args.n_bins,
+        save_path=os.path.join(args.out_dir, "position_hist_overlap.png"),
+    )
     with open(os.path.join(args.out_dir, "history.json"), "w") as f:
         json.dump(history, f)
     with open(os.path.join(args.out_dir, "params.json"), "w") as f:
@@ -202,9 +232,12 @@ def main():
                    "wall_sec": round(time.time() - t0, 1)}, f, indent=2)
 
     oo = ~in_window
+    in_window_ce = ce_per_r[in_window].mean() if in_window.any() else float("nan")
+    complement_ce = ce_per_r[oo].mean() if oo.any() else float("nan")
     print(f"[train_subset] DONE in {time.time()-t0:.0f}s | "
-          f"mean CE in-window={ce_per_r[in_window].mean():.3f} "
-          f"complement={ce_per_r[oo].mean():.3f}", flush=True)
+          f"mean CE in-window={in_window_ce:.3f} "
+          f"complement={complement_ce:.3f} "
+          f"hist-overlap={aggregate_hist_overlap:.1%}", flush=True)
 
 
 if __name__ == "__main__":

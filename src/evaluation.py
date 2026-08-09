@@ -27,10 +27,13 @@ def classify_regime(lyapunov, tol=0.02):
 
 @torch.no_grad()
 def evaluate_per_r(model, r_grid, device, context_len, n_bins,
-                   burn_in=0, n_eval_per_r=30, traj_len=150, seed=99):
+                   burn_in=0, n_eval_per_r=30, traj_len=150, seed=99,
+                   return_histograms=False):
     """
     Compute mean cross-entropy and top-1 accuracy per r value.
-    Returns: (ce_per_r, acc_per_r) as numpy arrays of shape (len(r_grid),)
+    When return_histograms=True, also return token-exposure counts with shape
+    (len(r_grid), n_bins). Context positions are counted each time they occur
+    in a sliding input, and targets are counted once per example.
     """
     model.eval()
     rng = np.random.default_rng(seed)
@@ -38,6 +41,7 @@ def evaluate_per_r(model, r_grid, device, context_len, n_bins,
     window_size = context_len + 1
     ce_per_r  = np.empty(len(r_grid))
     acc_per_r = np.empty(len(r_grid))
+    hist_per_r = np.zeros((len(r_grid), n_bins), dtype=np.int64)
 
     for i, r in enumerate(r_grid):
         contexts, targets = [], []
@@ -49,8 +53,16 @@ def evaluate_per_r(model, r_grid, device, context_len, n_bins,
                 contexts.append(tokens[t : t + context_len])
                 targets.append(tokens[t + context_len])
 
-        ctx = torch.tensor(np.array(contexts), dtype=torch.long).to(device)
-        tgt = torch.tensor(np.array(targets),  dtype=torch.long).to(device)
+        contexts_array = np.array(contexts)
+        targets_array = np.array(targets)
+        if return_histograms:
+            hist_per_r[i] = (
+                np.bincount(contexts_array.reshape(-1), minlength=n_bins)
+                + np.bincount(targets_array, minlength=n_bins)
+            )
+
+        ctx = torch.tensor(contexts_array, dtype=torch.long).to(device)
+        tgt = torch.tensor(targets_array, dtype=torch.long).to(device)
         logits = model(ctx)
         ce_per_r[i]  = criterion(logits, tgt).item()
         acc_per_r[i] = (logits.argmax(dim=-1) == tgt).float().mean().item()
@@ -58,7 +70,48 @@ def evaluate_per_r(model, r_grid, device, context_len, n_bins,
         if (i + 1) % 100 == 0:
             print(f"  eval: {i+1}/{len(r_grid)}")
 
+    if return_histograms:
+        return ce_per_r, acc_per_r, hist_per_r
     return ce_per_r, acc_per_r
+
+
+def histogram_overlap(counts_a, counts_b):
+    """Intersection coefficient of two count histograms, in [0, 1]."""
+    a = np.asarray(counts_a, dtype=float)
+    b = np.asarray(counts_b, dtype=float)
+    if a.sum() <= 0 or b.sum() <= 0:
+        return np.nan
+    return float(np.minimum(a / a.sum(), b / b.sum()).sum())
+
+
+def plot_position_histogram_overlap(train_counts, eval_counts, n_bins,
+                                    save_path=None):
+    """Overlay normalized training/eval x-bin exposure histograms."""
+    train = np.asarray(train_counts, dtype=float)
+    evaluation = np.asarray(eval_counts, dtype=float)
+    train /= train.sum()
+    evaluation /= evaluation.sum()
+    overlap = np.minimum(train, evaluation)
+    centers = (np.arange(n_bins) + 0.5) / n_bins
+
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    ax.fill_between(
+        centers, overlap, step="mid", alpha=0.35, color="#7A7A7A",
+        label=f"Overlap = {overlap.sum():.1%}",
+    )
+    ax.step(centers, train, where="mid", lw=1.7, color="#1B2A4A",
+            label="Training exposures")
+    ax.step(centers, evaluation, where="mid", lw=1.7, color="#D85A30",
+            label="Full-range eval exposures")
+    ax.set_xlim(0.0, 1.0)
+    ax.set_xlabel("Position $x$")
+    ax.set_ylabel("Fraction of token exposures per bin")
+    ax.set_title("Training vs evaluation position occupancy")
+    ax.legend(fontsize=9)
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=160, bbox_inches="tight")
+    return fig
 
 
 @torch.no_grad()
