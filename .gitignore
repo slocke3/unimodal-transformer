@@ -2,9 +2,9 @@
 outputs/checkpoints/*.pt
 outputs/figures/*
 outputs/cache/*
-runs/**/best_*.pt
+runs*/**/best_*.pt
 logs/
-jobs.txt
+jobs*.txt
 
 # Keep directory structure via .gitkeep
 !outputs/figures/.gitkeep

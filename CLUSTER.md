@@ -62,8 +62,9 @@ squeue -u $USER                                                # watch it
 cat logs/*_1.out                                               # its output
 ```
 
-A finished job prints `[train_subset] DONE in <sec>s | mean CE in-window=… complement=…`
-and writes `runs/<name>/{best.pt, eval_per_r.npz, params.json, history.json}`.
+A finished job prints `[train_subset] DONE in <sec>s | mean CE in-window=…
+complement=… hist-overlap=…` and writes performance, histogram, checkpoint,
+configuration, and training-history artifacts under `runs/<name>/`.
 Check the wall-time in `params.json` and, if it's near 1 h, bump `--time` in the
 SLURM script before the big array.
 
@@ -87,6 +88,13 @@ For experiment 2 (informative-prompt placements over the full range):
 python scripts/gen_jobs.py --mode strategy \
     --placements uniform_r uniform_lambda chaotic bifurcation --ms 8 16 32
 sbatch --array=1-<N>%20 scripts/run_array.slurm
+```
+
+For prefix/suffix boundary sweeps (quarter-step defaults, 26 jobs including
+separate full-range `rmax` and `rmin` runs):
+```bash
+python scripts/gen_jobs.py --mode boundary --out_base runs_hist_boundary
+JOBS_FILE=jobs.txt sbatch --array=1-26%20 scripts/run_array.slurm
 ```
 
 ## Monitor
@@ -117,7 +125,7 @@ re-evaluate models later).
 | file | role |
 |------|------|
 | `scripts/train_subset.py` | trains ONE model on one r-subset, evals across r, writes `eval_per_r.npz`. `--help` for all args (torch-free). |
-| `scripts/gen_jobs.py`     | expands a `(widths, m, seeds)` or `(placements, m)` grid into `jobs.txt`; prints the submit command. |
+| `scripts/gen_jobs.py`     | expands window, strategy, or prefix/suffix boundary grids into `jobs.txt`; prints the submit command. |
 | `scripts/run_array.slurm` | array driver: task N runs line N of `jobs.txt`. |
 
 Key run knobs (defaults in parentheses): `--context_len (50)`, `--n_bins (64)`,
@@ -127,6 +135,8 @@ Total training data is held fixed via `--n_train_traj`, so varying `m` changes
 
 ## eval_per_r.npz contents
 
-`r_grid` (dense r), `ce_per_r`, `acc_per_r`, `in_window` (bool mask: r inside the
-training window), `train_r` (the exact training r-values). Raw CE is saved, so
-excess-over-λ / excess-over-floor are computed downstream in analysis.
+Alongside `r_grid`, `ce_per_r`, `acc_per_r`, `in_window`, and `train_r`, each
+file stores `x_bin_edges`, `train_token_hist`, `eval_token_hist`,
+`eval_token_hist_per_r`, `hist_overlap_per_r`, and
+`aggregate_hist_overlap`. Histogram counts represent model exposures: every
+context occurrence plus every target occurrence is counted.
