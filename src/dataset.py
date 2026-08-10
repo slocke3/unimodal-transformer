@@ -40,8 +40,14 @@ class DiscreteMapDataset(Dataset):
                 targets_list.append(tokens[t + context_len])
                 r_labels_list.append(rs[i])
 
-        contexts = np.array(contexts_list)
-        targets = np.array(targets_list)
+        # Force int dtype and handle the empty case (e.g. an empty split):
+        # np.array([]) defaults to float64, which breaks np.bincount below.
+        if contexts_list:
+            contexts = np.asarray(contexts_list, dtype=np.int64)
+            targets = np.asarray(targets_list, dtype=np.int64)
+        else:
+            contexts = np.empty((0, context_len), dtype=np.int64)
+            targets = np.empty((0,), dtype=np.int64)
         # Histogram of the token exposures in one pass through this dataset.
         # Positions repeated across sliding contexts are intentionally counted
         # repeatedly because the model sees each occurrence.
