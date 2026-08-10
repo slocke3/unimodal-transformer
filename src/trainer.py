@@ -17,6 +17,8 @@ class TrainerConfig:
     eval_every: int = 1
     save_dir: str = "outputs/checkpoints"
     device: str = "auto"
+    max_steps: int = None   # if set: train exactly this many gradient steps,
+                            # no early stopping (fixed-compute comparisons)
 
     def resolve_device(self):
         if self.device == "auto":
@@ -93,7 +95,53 @@ class Trainer:
             n_batches += 1
         return total_loss / n_batches
 
+    def _train_fixed_steps(self):
+        """Train for exactly config.max_steps gradient steps, no early stopping.
+        Cosine LR is scheduled over steps, so the schedule is identical for every
+        run at the same max_steps (fixed-compute comparison)."""
+        S = self.config.max_steps
+        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=S)
+        log_interval = max(1, S // 15)
+        print(f"Device: {self.device} | Parameters: {self.model.count_parameters():,}")
+        print(f"Fixed-step training: {S} steps | {len(self.train_loader)} batches/epoch")
+        print("-" * 60)
+
+        self.model.train()
+        it = iter(self.train_loader)
+        t0, run_loss, run_n = time.time(), 0.0, 0
+        for step in range(1, S + 1):
+            try:
+                context, target, _ = next(it)
+            except StopIteration:
+                it = iter(self.train_loader)
+                context, target, _ = next(it)
+            context, target = context.to(self.device), target.to(self.device)
+            self.optimizer.zero_grad()
+            loss = self.criterion(self.model(context), target)
+            loss.backward()
+            if self.config.grad_clip > 0:
+                nn.utils.clip_grad_norm_(self.model.parameters(), self.config.grad_clip)
+            self.optimizer.step()
+            self.scheduler.step()
+            run_loss += loss.item(); run_n += 1
+            if step % log_interval == 0:
+                self.train_losses.append(run_loss / run_n); run_loss, run_n = 0.0, 0
+                val_loss = self._eval(self.val_loader); self.model.train()
+                self.val_losses.append(val_loss)
+                print(f"Step {step:6d}/{S} | train {self.train_losses[-1]:.4f} | "
+                      f"val {val_loss:.4f} | {time.time()-t0:.1f}s")
+
+        self.best_val_loss = self._eval(self.val_loader)
+        self.best_epoch = S   # stores the step count in the 'epoch' slot
+        self._save_checkpoint("best"); self._save_checkpoint("final")
+        return {"train_losses": self.train_losses, "val_losses": self.val_losses,
+                "best_epoch": self.best_epoch, "best_val_loss": self.best_val_loss,
+                "total_steps": S}
+
     def train(self):
+        if self.config.max_steps is not None:
+            return self._train_fixed_steps()
+
         print(f"Device: {self.device} | Parameters: {self.model.count_parameters():,}")
         print(f"Train batches: {len(self.train_loader)} | Val batches: {len(self.val_loader)}")
         print("-" * 60)
