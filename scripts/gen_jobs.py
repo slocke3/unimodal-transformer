@@ -33,8 +33,12 @@ def tile_starts(width, lo, hi):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", choices=["window", "strategy", "boundary"],
+    ap.add_argument("--mode", choices=["window", "strategy", "boundary", "budget"],
                     default="window")
+    ap.add_argument("--budgets", type=int, nargs="+",
+                    default=[8000, 4000, 2000, 1000, 500],
+                    help="budget mode: data budgets N (uniform-random full-range, "
+                         "1 traj/r, early stopping)")
     ap.add_argument("--widths", type=float, nargs="+", default=[0.125, 0.25, 0.5, 1.0])
     ap.add_argument("--r_maxes", type=float, nargs="+",
                     default=list(np.arange(1.0, 4.01, 0.25)))
@@ -74,6 +78,20 @@ def main():
                     lines.append(
                         f"--placement uniform_r_random --start {s:.4f} --width {w:g} "
                         f"--m {m} --seed {seed} {win_common} --out_dir {a.out_base}/{name}")
+    elif a.mode == "budget":
+        # data-budget sweep: full-range uniform-random r, one trajectory per r
+        # (m == N == n_train_traj), each model trained with early stopping.
+        # Answers "how much data to learn the family" WITHOUT the fixed-step
+        # overfitting artifact (train_subset.py loads the best-val checkpoint).
+        span = a.hi - a.lo
+        for N in a.budgets:
+            for seed in a.seeds:
+                name = f"budget_N{N}_seed{seed}"
+                lines.append(
+                    f"--placement uniform_r_random --start {a.lo} --width {span:g} "
+                    f"--m {N} --n_train_traj {N} --context_len {a.context_len} "
+                    f"--n_bins {a.n_bins} --full_lo {a.lo} --full_hi {a.hi} "
+                    f"--seed {seed} --out_dir {a.out_base}/{name}")
     elif a.mode == "strategy":
         span = a.hi - a.lo
         for pl in a.placements:
@@ -116,6 +134,9 @@ def main():
     elif a.mode == "boundary":
         print(f"  r_max prefixes: {len(a.r_maxes)} x {len(a.seeds)} seed")
         print(f"  r_min suffixes: {len(a.r_mins)} x {len(a.seeds)} seed")
+    elif a.mode == "budget":
+        print(f"  budgets N={a.budgets} (1 traj/r, early stopping) "
+              f"x {len(a.seeds)} seed")
     print(f"\nsubmit with:\n  mkdir -p logs {a.out_base}\n"
           f"  sbatch --array=1-{len(lines)} scripts/run_array.slurm")
 
