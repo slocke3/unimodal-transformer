@@ -36,7 +36,7 @@ def main():
     ap.add_argument("--mode", choices=["window", "strategy", "boundary", "budget"],
                     default="window")
     ap.add_argument("--budgets", type=int, nargs="+",
-                    default=[8000, 4000, 2000, 1000, 500],
+                    default=[4000, 2000, 1000, 500, 250, 100],
                     help="budget mode: data budgets N (uniform-random full-range, "
                          "1 traj/r, early stopping)")
     ap.add_argument("--widths", type=float, nargs="+", default=[0.125, 0.25, 0.5, 1.0])
