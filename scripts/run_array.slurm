@@ -16,7 +16,10 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:1
 #SBATCH --mem=16G
-#SBATCH --time=01:30:00
+# Keep this just OVER 1 hour: <=1h is routed to della's test QOS (long waits),
+# while a padded request backfills poorly behind the 12-24h jobs that dominate
+# the queue. Observed task runtimes are 5-20 min, so 1:05 is ~3-12x headroom.
+#SBATCH --time=01:05:00
 
 set -eo pipefail
 
