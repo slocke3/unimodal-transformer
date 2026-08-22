@@ -15,6 +15,10 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:1
+# gpu is heavily oversubscribed (often ~1000 higher-priority jobs queued); mig
+# offers 56 1g.10gb slices that this ~0.8M-param model fits in easily, so take
+# whichever frees up first.
+#SBATCH --partition=gpu,mig
 #SBATCH --mem=16G
 # Keep this just OVER 1 hour: <=1h is routed to della's test QOS (long waits),
 # while a padded request backfills poorly behind the 12-24h jobs that dominate
