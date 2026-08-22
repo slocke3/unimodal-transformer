@@ -84,6 +84,9 @@ def main():
     ap.add_argument("--max_steps", type=int, default=30000,
                     help="budget mode: gradient-step budget. Trained exactly in the "
                          "fixed arm; an epoch ceiling in the early arm.")
+    ap.add_argument("--max_val_traj", type=int, default=0,
+                    help="cap the validation split (0 = no cap); keeps val-eval "
+                         "cost from scaling with the data budget")
     ap.add_argument("--log_points", type=int, default=60,
                     help="budget mode: train/val samples recorded per fixed-step run")
     ap.add_argument("--traj_len", type=int, default=150,
@@ -149,7 +152,8 @@ def main():
             for arm in arms:
                 if arm == "fixed":
                     protocol = (f"--max_steps {a.max_steps} "
-                                f"--log_points {a.log_points}")
+                                f"--log_points {a.log_points} "
+                                f"--max_val_traj {a.max_val_traj}")
                 else:
                     protocol = f"--max_epochs {max_epochs} --patience {patience}"
                 for seed in a.seeds:
@@ -175,6 +179,7 @@ def main():
                     f"--placement uniform_r_random --start {a.lo} --width {span:g} "
                     f"--m {m} --seed {seed} {common} "
                     f"--max_steps {a.max_steps} --log_points {a.log_points} "
+                    f"--max_val_traj {a.max_val_traj} "
                     f"--out_dir {a.out_base}/{name}")
     elif a.mode == "strategy":
         span = a.hi - a.lo

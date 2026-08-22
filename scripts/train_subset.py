@@ -102,6 +102,14 @@ def main():
     p.add_argument("--n_train_traj", type=int, default=8000,
                    help="TOTAL training trajectories, split evenly over the m r-values")
     p.add_argument("--val_frac", type=float, default=0.15)
+    p.add_argument("--max_val_traj", type=int, default=0,
+                   help="cap the validation split at this many trajectories (0 = "
+                        "no cap). Validation is only used for monitoring and "
+                        "checkpoint selection, but its cost scales with the data "
+                        "budget: at 32k trajectories an uncapped val pass is "
+                        "~1900 batches, which at 100 evals costs more than the "
+                        "training run itself. Trajectories freed by the cap go "
+                        "to training.")
     # model / training
     p.add_argument("--d_model", type=int, default=128)
     p.add_argument("--n_heads", type=int, default=4)
@@ -170,6 +178,8 @@ def main():
     all_r = np.repeat(train_r, n_per_r_values)
     rng.shuffle(all_r)
     n_val = int(args.val_frac * len(all_r))
+    if args.max_val_traj > 0:
+        n_val = min(n_val, args.max_val_traj)
     val_r, tr_r = all_r[:n_val], all_r[n_val:]
 
     def loader(rvals, shuffle, seed):
@@ -207,23 +217,54 @@ def main():
 
     # -- eval across the WHOLE family (in-window + complement) ---------------
     r_grid = np.linspace(args.full_lo, args.full_hi, args.r_eval_points)
-    ce_per_r, acc_per_r, eval_token_hist_per_r = evaluate_per_r(
-        model=model, r_grid=r_grid, device=device, context_len=args.context_len,
-        n_bins=args.n_bins, burn_in=args.burn_in, n_eval_per_r=args.n_eval_per_r,
-        traj_len=args.traj_len, seed=args.seed + 7, return_histograms=True)
-    # Figure-2 style "seen tasks" row: evaluate at the r-values the model was
-    # actually trained on. The full-range r_grid above is the "new tasks" row --
-    # it is the same fixed grid for every run, so it stays comparable across m.
+
+    # Figure-2 style "seen tasks" row: the r-values the model actually trained
+    # on. The full-range r_grid is the "new tasks" row -- the same fixed grid for
+    # every run, so it stays comparable across m.
     seen_rng = np.random.default_rng(args.seed + 11)
     if len(train_r) > args.n_seen_eval:
         seen_r = np.sort(seen_rng.choice(train_r, size=args.n_seen_eval,
                                          replace=False))
     else:
         seen_r = np.sort(train_r)
-    ce_at_train_r, acc_at_train_r = evaluate_per_r(
-        model=model, r_grid=seen_r, device=device, context_len=args.context_len,
-        n_bins=args.n_bins, burn_in=args.burn_in, n_eval_per_r=args.n_eval_per_r,
-        traj_len=args.traj_len, seed=args.seed + 13)
+
+    def eval_grids(tag):
+        """Per-r CE/acc on the new-task grid and on the seen (training) r's."""
+        ce, acc, hist = evaluate_per_r(
+            model=model, r_grid=r_grid, device=device,
+            context_len=args.context_len, n_bins=args.n_bins,
+            burn_in=args.burn_in, n_eval_per_r=args.n_eval_per_r,
+            traj_len=args.traj_len, seed=args.seed + 7, return_histograms=True)
+        ce_seen, acc_seen = evaluate_per_r(
+            model=model, r_grid=seen_r, device=device,
+            context_len=args.context_len, n_bins=args.n_bins,
+            burn_in=args.burn_in, n_eval_per_r=args.n_eval_per_r,
+            traj_len=args.traj_len, seed=args.seed + 13)
+        print(f"[train_subset] eval[{tag}] new-grid={ce.mean():.4f} "
+              f"seen-r={ce_seen.mean():.4f}", flush=True)
+        return ce, acc, hist, ce_seen, acc_seen
+
+    # The model currently holds the weights load_best() restored: the final
+    # weights in fixed-step mode, the best-val weights in epoch mode.
+    ce_per_r, acc_per_r, eval_token_hist_per_r, ce_at_train_r, acc_at_train_r = \
+        eval_grids("final" if args.max_steps is not None else "bestval")
+
+    # Fixed-step mode also saved the best-val point along the SAME trajectory,
+    # so evaluate that too: one run then reports both protocols, with the
+    # optimizer path held identical between them.
+    extra = {}
+    if args.max_steps is not None:
+        bestval_path = os.path.join(args.out_dir, "best_bestval.pt")
+        if os.path.exists(bestval_path):
+            ckpt = torch.load(bestval_path, map_location=device,
+                              weights_only=True)
+            model.load_state_dict(ckpt["model_state_dict"])
+            bv_ce, bv_acc, _, bv_ce_seen, bv_acc_seen = eval_grids("bestval")
+            extra = {"ce_per_r_bestval": bv_ce, "acc_per_r_bestval": bv_acc,
+                     "ce_at_train_r_bestval": bv_ce_seen,
+                     "acc_at_train_r_bestval": bv_acc_seen}
+        else:
+            print("[train_subset] WARNING: no best_bestval.pt found", flush=True)
 
     eval_token_hist = eval_token_hist_per_r.sum(axis=0)
     hist_overlap_per_r = np.array([
@@ -252,7 +293,7 @@ def main():
              hist_overlap_per_r=hist_overlap_per_r,
              aggregate_hist_overlap=aggregate_hist_overlap,
              seen_r=seen_r, ce_at_train_r=ce_at_train_r,
-             acc_at_train_r=acc_at_train_r)
+             acc_at_train_r=acc_at_train_r, **extra)
     plot_position_histogram_overlap(
         train_token_hist, eval_token_hist, args.n_bins,
         save_path=os.path.join(args.out_dir, "position_hist_overlap.png"),
