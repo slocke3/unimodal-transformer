@@ -124,6 +124,9 @@ def main():
     # eval
     p.add_argument("--r_eval_points", type=int, default=300)
     p.add_argument("--n_eval_per_r", type=int, default=30)
+    p.add_argument("--n_seen_eval", type=int, default=200,
+                   help="how many of the training r-values to evaluate on (the "
+                        "'seen tasks' row); subsampled when m exceeds this")
     # bookkeeping
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--out_dir", required=True)
@@ -208,6 +211,20 @@ def main():
         model=model, r_grid=r_grid, device=device, context_len=args.context_len,
         n_bins=args.n_bins, burn_in=args.burn_in, n_eval_per_r=args.n_eval_per_r,
         traj_len=args.traj_len, seed=args.seed + 7, return_histograms=True)
+    # Figure-2 style "seen tasks" row: evaluate at the r-values the model was
+    # actually trained on. The full-range r_grid above is the "new tasks" row --
+    # it is the same fixed grid for every run, so it stays comparable across m.
+    seen_rng = np.random.default_rng(args.seed + 11)
+    if len(train_r) > args.n_seen_eval:
+        seen_r = np.sort(seen_rng.choice(train_r, size=args.n_seen_eval,
+                                         replace=False))
+    else:
+        seen_r = np.sort(train_r)
+    ce_at_train_r, acc_at_train_r = evaluate_per_r(
+        model=model, r_grid=seen_r, device=device, context_len=args.context_len,
+        n_bins=args.n_bins, burn_in=args.burn_in, n_eval_per_r=args.n_eval_per_r,
+        traj_len=args.traj_len, seed=args.seed + 13)
+
     eval_token_hist = eval_token_hist_per_r.sum(axis=0)
     hist_overlap_per_r = np.array([
         histogram_overlap(train_token_hist, counts)
@@ -233,7 +250,9 @@ def main():
              eval_token_hist=eval_token_hist,
              eval_token_hist_per_r=eval_token_hist_per_r,
              hist_overlap_per_r=hist_overlap_per_r,
-             aggregate_hist_overlap=aggregate_hist_overlap)
+             aggregate_hist_overlap=aggregate_hist_overlap,
+             seen_r=seen_r, ce_at_train_r=ce_at_train_r,
+             acc_at_train_r=acc_at_train_r)
     plot_position_histogram_overlap(
         train_token_hist, eval_token_hist, args.n_bins,
         save_path=os.path.join(args.out_dir, "position_hist_overlap.png"),
@@ -253,6 +272,7 @@ def main():
     print(f"[train_subset] DONE in {time.time()-t0:.0f}s | "
           f"mean CE in-window={in_window_ce:.3f} "
           f"complement={complement_ce:.3f} "
+          f"seen-r={ce_at_train_r.mean():.3f} "
           f"hist-overlap={aggregate_hist_overlap:.1%}", flush=True)
 
 

@@ -28,6 +28,15 @@ Budget mode (experiment 3: how much data to learn the family?):
     python scripts/gen_jobs.py --mode budget --arms both --max_steps 30000 \
         --out_base runs_budget
 
+Diversity mode (experiment 4: the Raventos et al. task-diversity threshold):
+    hold the TOTAL trajectory budget fixed at --n_train_traj and vary only the
+    number of distinct r-values m, so each r gets n_train_traj/m trajectories.
+    This separates task diversity from data quantity -- the budget mode below
+    does not, since it uses one trajectory per r and so grows both together.
+    Every run trains the same --max_steps gradient steps, fixing optimization
+    too, leaving m as the only variable.
+    python scripts/gen_jobs.py --mode diversity --out_base runs_diversity
+
 Boundary mode (prefix/suffix generalization):
     python scripts/gen_jobs.py --mode boundary \
         --r_maxes 1.0 1.25 1.5 1.75 2.0 2.25 2.5 2.75 3.0 3.25 3.5 3.75 4.0 \
@@ -57,12 +66,19 @@ def steps_per_epoch(n_traj, traj_len, context_len, val_frac, batch_size):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", choices=["window", "strategy", "boundary", "budget"],
+    ap.add_argument("--mode",
+                    choices=["window", "strategy", "boundary", "budget",
+                             "diversity"],
                     default="window")
     ap.add_argument("--budgets", type=int, nargs="+",
                     default=[4000, 2000, 1000, 500, 250, 100],
                     help="budget mode: data budgets N (uniform-random full-range, "
                          "1 traj/r)")
+    ap.add_argument("--ms_diversity", type=int, nargs="+",
+                    default=[1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048,
+                             4096, 8000],
+                    help="diversity mode: numbers of distinct r-values (total "
+                         "trajectory budget stays fixed at --n_train_traj)")
     ap.add_argument("--arms", choices=["fixed", "early", "both"], default="both",
                     help="budget mode: fixed-step arm, early-stopping arm, or both")
     ap.add_argument("--max_steps", type=int, default=30000,
@@ -145,6 +161,21 @@ def main():
                         f"--batch_size {a.batch_size} --val_frac {a.val_frac} "
                         f"--full_lo {a.lo} --full_hi {a.hi} {protocol} "
                         f"--seed {seed} --out_dir {a.out_base}/{name}")
+    elif a.mode == "diversity":
+        # Total data fixed; only the number of distinct tasks changes. Every run
+        # also gets the same gradient-step budget, so neither data quantity nor
+        # optimization varies with m.
+        span = a.hi - a.lo
+        for m in a.ms_diversity:
+            if m > a.n_train_traj:
+                raise ValueError(f"m={m} exceeds n_train_traj={a.n_train_traj}")
+            for seed in a.seeds:
+                name = f"div_m{m}_seed{seed}"
+                lines.append(
+                    f"--placement uniform_r_random --start {a.lo} --width {span:g} "
+                    f"--m {m} --seed {seed} {common} "
+                    f"--max_steps {a.max_steps} --log_points {a.log_points} "
+                    f"--out_dir {a.out_base}/{name}")
     elif a.mode == "strategy":
         span = a.hi - a.lo
         for pl in a.placements:
@@ -187,6 +218,12 @@ def main():
     elif a.mode == "boundary":
         print(f"  r_max prefixes: {len(a.r_maxes)} x {len(a.seeds)} seed")
         print(f"  r_min suffixes: {len(a.r_mins)} x {len(a.seeds)} seed")
+    elif a.mode == "diversity":
+        print(f"  m={a.ms_diversity} x {len(a.seeds)} seed | "
+              f"total trajectories fixed at {a.n_train_traj}, "
+              f"step budget {a.max_steps}")
+        for m in a.ms_diversity:
+            print(f"    m={m:>5}: {a.n_train_traj/m:>8.1f} trajectories per r")
     elif a.mode == "budget":
         print(f"  budgets N={a.budgets} (1 traj/r) x arms={a.arms} "
               f"x {len(a.seeds)} seed | step budget {a.max_steps}")
