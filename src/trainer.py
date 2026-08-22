@@ -19,6 +19,8 @@ class TrainerConfig:
     device: str = "auto"
     max_steps: int = None   # if set: train exactly this many gradient steps,
                             # no early stopping (fixed-compute comparisons)
+    log_points: int = 15    # fixed-step mode: how many train/val samples to
+                            # record over the run (resolution of the loss curve)
 
     def resolve_device(self):
         if self.device == "auto":
@@ -101,7 +103,7 @@ class Trainer:
         run at the same max_steps (fixed-compute comparison)."""
         S = self.config.max_steps
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=S)
-        log_interval = max(1, S // 15)
+        log_interval = max(1, S // max(1, self.config.log_points))
         print(f"Device: {self.device} | Parameters: {self.model.count_parameters():,}")
         print(f"Fixed-step training: {S} steps | {len(self.train_loader)} batches/epoch")
         print("-" * 60)

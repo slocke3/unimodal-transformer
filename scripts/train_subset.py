@@ -111,6 +111,14 @@ def main():
     p.add_argument("--weight_decay", type=float, default=1e-4)
     p.add_argument("--max_epochs", type=int, default=40)
     p.add_argument("--patience", type=int, default=8)
+    p.add_argument("--max_steps", type=int, default=None,
+                   help="FIXED-STEP mode: train exactly this many gradient steps, "
+                        "no early stopping, and evaluate the FINAL model. Equal "
+                        "optimization budget across data budgets, so small budgets "
+                        "are allowed to overfit. Omit for epoch mode + early stopping.")
+    p.add_argument("--log_points", type=int, default=15,
+                   help="fixed-step mode: number of train/val samples recorded over "
+                        "the run (resolution of the overfitting curve in history.json)")
     p.add_argument("--batch_size", type=int, default=256)
     p.add_argument("--num_workers", type=int, default=2)
     # eval
@@ -166,7 +174,8 @@ def main():
                                 burn_in=args.burn_in, traj_len=args.traj_len,
                                 n_bins=args.n_bins, seed=seed)
         return DataLoader(ds, batch_size=args.batch_size, shuffle=shuffle,
-                          num_workers=args.num_workers, pin_memory=True)
+                          num_workers=args.num_workers, pin_memory=True,
+                          persistent_workers=args.num_workers > 0)
 
     train_loader = loader(tr_r, True, args.seed)
     val_loader = loader(val_r, False, args.seed + 1)
@@ -178,12 +187,19 @@ def main():
 
     tcfg = TrainerConfig(lr=args.lr, weight_decay=args.weight_decay,
                          max_epochs=args.max_epochs, patience=args.patience,
+                         max_steps=args.max_steps, log_points=args.log_points,
                          save_dir=args.out_dir)
     trainer = Trainer(model, train_loader, val_loader, config=tcfg, run_name="best")
+    mode = (f"fixed-step({args.max_steps})" if args.max_steps is not None
+            else f"early-stop(max_epochs={args.max_epochs},patience={args.patience})")
     print(f"[train_subset] placement={args.placement} m={args.m} "
           f"window=[{train_r_lo:.3f},{train_r_hi:.3f}] n_train={len(all_r)} "
-          f"n_per_r={n_per_r}{'+1' if n_extra_r else ''} device={device}", flush=True)
+          f"n_per_r={n_per_r}{'+1' if n_extra_r else ''} mode={mode} "
+          f"device={device}", flush=True)
     history = trainer.train()
+    # Epoch mode: restore the best-val checkpoint. Fixed-step mode: the "best"
+    # tag holds the final weights (no early stopping), which is the model whose
+    # overfitting we are measuring -- so this is the right load in both modes.
     trainer.load_best()
 
     # -- eval across the WHOLE family (in-window + complement) ---------------
