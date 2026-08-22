@@ -120,6 +120,34 @@ Easiest options:
 Keep the `best.pt` checkpoints on della (they're bigger and only needed if we
 re-evaluate models later).
 
+## Note for future budget sweeps: two checkpoints, one run
+
+The August 2026 budget sweep trained **two arms** per budget -- a fixed-step arm
+(exactly `--max_steps` gradient steps, no early stopping, final model evaluated)
+and an early-stopping arm -- which is 12 jobs for 6 budgets.
+
+Next time, run only the fixed-step arm and have it save a **best-validation
+checkpoint alongside the final one**. The final weights give the fixed-step
+result and the best-val checkpoint gives the early-stopping result, so one run
+yields both numbers. That halves the job count, which matters because queue wait
+on della normally dominates the actual compute.
+
+It is also the better comparison. Two separate arms differ in optimizer
+trajectory as well as in checkpoint rule -- each has its own cosine schedule and
+its own sequence of updates -- so a gap between them is not attributable to
+checkpoint selection alone. Two checkpoints off a single run hold the whole
+optimization path fixed and isolate exactly which point along it you report.
+
+Implementation sketch: `Trainer._train_fixed_steps` already evaluates validation
+loss at intervals during the fixed-step loop; track the running minimum there and
+save a separate checkpoint tag when it improves, then have `train_subset.py`
+evaluate both tags and write two sets of per-r results.
+
+**Do not edit anything under `src/` while an array is still queued.** Pending
+array tasks import the training code fresh when they start, so a mid-array edit
+makes later tasks run different code from earlier ones and the sweep is no longer
+internally consistent. Wait until every task has reached a terminal state.
+
 ## What each script is
 
 | file | role |
