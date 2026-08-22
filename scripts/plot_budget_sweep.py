@@ -23,6 +23,9 @@ from matplotlib.cm import ScalarMappable
 from matplotlib.colors import LogNorm
 import numpy as np
 
+# Period-doubling accumulation point: r above this is the chaotic band.
+R_INF = 3.5699
+
 ARM_STYLE = {
     "fixed": {"color": "#D85A30", "label": "Fixed steps (final model)"},
     "early": {"color": "#1B2A4A", "label": "Early stopping (best-val model)"},
@@ -76,7 +79,7 @@ def budget_colors(budgets):
 def plot_ce_vs_r(runs, save_stem):
     arms = [a for a in ("fixed", "early") if a in runs]
     budgets = sorted({n for arm in arms for n in runs[arm]})
-    colors, mappable = budget_colors(budgets)
+    colors, _ = budget_colors(budgets)
 
     fig, axes = plt.subplots(1, len(arms) + 1,
                              figsize=(5.2 * (len(arms) + 1), 4.2))
@@ -89,6 +92,8 @@ def plot_ce_vs_r(runs, save_stem):
                 continue
             ax.plot(run["r"], run["ce"], lw=1.1, color=colors[n], label=f"N={n}")
         ax.set_yscale("log")
+        ax.set_ylim(bottom=1e-6)
+        ax.axvspan(R_INF, 4.0, color="#F44336", alpha=0.06, lw=0)
         ax.set_xlabel(r"Parameter $r$")
         ax.set_ylabel("Cross-entropy (nats)")
         ax.set_title(ARM_STYLE[arm]["label"], fontsize=11)
@@ -97,24 +102,28 @@ def plot_ce_vs_r(runs, save_stem):
     ax = axes[-1]
     for arm in arms:
         ns = sorted(runs[arm])
-        means = [runs[arm][n]["ce"].mean() for n in ns]
-        medians = [np.median(runs[arm][n]["ce"]) for n in ns]
         style = ARM_STYLE[arm]
-        ax.plot(ns, means, "o-", color=style["color"], lw=1.6,
-                label=f"{style['label']} — mean")
-        ax.plot(ns, medians, "s--", color=style["color"], lw=1.2, alpha=0.6,
-                label=f"{style['label']} — median")
+        means = [runs[arm][n]["ce"].mean() for n in ns]
+        # The median is ~1e-6: most r are periodic and predicted essentially
+        # perfectly, so the full-range mean is carried by the chaotic band.
+        # Report that band separately rather than a median that says nothing.
+        chaotic = [runs[arm][n]["ce"][runs[arm][n]["r"] >= R_INF].mean()
+                   for n in ns]
+        ax.plot(ns, means, "o-", color=style["color"], lw=1.7,
+                label=f"{style['label']} — full range")
+        ax.plot(ns, chaotic, "s--", color=style["color"], lw=1.3, alpha=0.7,
+                label=f"{style['label']} — chaotic band")
     ax.set_xscale("log")
     ax.set_yscale("log")
     ax.set_xlabel("Training budget $N$ (trajectories = distinct $r$)")
-    ax.set_ylabel("Cross-entropy over the full range (nats)")
+    ax.set_ylabel("Mean cross-entropy (nats)")
     ax.set_title("How much data to learn the family?", fontsize=11)
     ax.legend(fontsize=7)
+    ax.grid(alpha=0.25, which="both", lw=0.4)
 
-    fig.colorbar(mappable, ax=axes[:len(arms)].tolist(), label="Budget $N$",
-                 fraction=0.02, pad=0.01)
     fig.suptitle("Data-budget sweep: cross-entropy across the logistic family",
                  fontsize=12)
+    fig.tight_layout()
     for ext in ("png", "pdf"):
         fig.savefig(f"{save_stem}.{ext}", dpi=160, bbox_inches="tight")
     return fig
