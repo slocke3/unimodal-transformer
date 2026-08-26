@@ -49,21 +49,29 @@ infer the dynamics. It is the binning moving. Since the curve is just the
 `R = 1` column of the evaluation grid, this control is free.
 
 Implemented in `scripts/analyze_conjugacy_curve.py`, run automatically by
-`scripts/make_conjugacy_figure.slurm`.
+`scripts/make_conjugacy_figure.slurm`. The model-free half of the story --
+the densities, the transition matrices and the two overlap curves -- is
+plotted by `scripts/plot_family_overlap.py` (`figures_asym/family_overlap.png`),
+which needs no checkpoint and can be regenerated at any bin count.
 
 One measurement from that script is worth recording up front, because it decides
 which statistic to trust. Comparing each `alpha` against `alpha = 1` at `R = 1`:
 
 | alpha | marginal overlap | transition overlap |
 |-------|------------------|--------------------|
-| 0.5   | 0.958            | **0.169**          |
-| 0.7   | 0.978            | 0.287              |
-| 0.9   | 0.994            | 0.641              |
+| 0.5   | 0.959            | **0.075**          |
+| 0.7   | 0.978            | 0.106              |
+| 0.9   | 0.992            | 0.220              |
+
+(at the sweep's `n_bins = 64`; a coarser partition raises both numbers, so
+always quote the bin count with them. Stable to three decimals from 50k to 1M
+orbit steps and across seeds, with no orbit death.)
 
 The *marginal* occupancy barely moves — both maps are full-chaos with density
 piling up at the endpoints — but the *transition* distribution moves enormously.
-At `alpha = 0.5` more than 80% of the transition mass lands in (bin, next bin)
-cells that essentially never occur at `alpha = 1`. For a next-token task the
+At `alpha = 0.5` more than 92% of the transition mass lands in (bin, next bin)
+cells that essentially never occur at `alpha = 1`, even though 96% of the
+1-point occupancy is shared. For a next-token task the
 transition statistic is the relevant one, so marginal histogram overlap badly
 understates how far the representation has shifted. Any future diagnostic that
 uses occupancy overlap as a proxy should use the order-1 joint, not the
