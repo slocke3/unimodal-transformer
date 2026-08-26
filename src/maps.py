@@ -170,3 +170,84 @@ FAMILIES = {
         "color":    "#D85A30",
     },
 }
+
+
+# ---------------------------------------------------------------------------
+# Asymmetric unimodal family (peak position as a free parameter)
+# ---------------------------------------------------------------------------
+#
+#   g_{alpha,beta}(x) = R (x/x_c)^alpha ((1-x)/(1-x_c))^beta,  x_c = alpha/(alpha+beta)
+#
+# We use the one-parameter slice beta = 2 - alpha, so alpha + beta = 2 and the
+# critical point sits at x_c = alpha/2. Verified properties:
+#
+#   * R is the PEAK HEIGHT: max_x g = g(x_c) = R exactly. The logistic map peaks
+#     at r/4, so R = r/4 is the correspondence, and at alpha = 1 the two agree
+#     to machine zero.
+#   * The critical point stays quadratic for every alpha (the drop from the peak
+#     goes as u^2 with coefficient (alpha+beta)^3/(2*alpha*beta) = 4/(alpha*beta)),
+#     so the family stays in the logistic universality class.
+#   * Near the origin g ~ x^alpha, so g'(0) is infinite for alpha < 1, 4R at
+#     alpha = 1, and ZERO for alpha > 1. For alpha > 1 the origin is therefore
+#     superattracting and a growing fraction of orbits die there -- at alpha=1.4,
+#     R=1 every orbit does. Sweeps should stay at alpha <= 1 unless that
+#     degeneracy is the object of study.
+
+def asym_map(x, R, alpha):
+    """One step of the asymmetric family with beta = 2 - alpha."""
+    beta = 2.0 - alpha
+    x_c = alpha / 2.0
+    x = np.clip(x, 0.0, 1.0)
+    if x <= 0.0 or x >= 1.0:
+        return 0.0
+    return R * (x / x_c) ** alpha * ((1.0 - x) / (1.0 - x_c)) ** beta
+
+
+def asym_derivative(x, R, alpha):
+    """g'(x) = g(x) * (alpha/x - beta/(1-x))."""
+    beta = 2.0 - alpha
+    if x <= 0.0 or x >= 1.0:
+        return 0.0
+    return asym_map(x, R, alpha) * (alpha / x - beta / (1.0 - x))
+
+
+def iterate_asym(x0, R, alpha, n_steps):
+    """Orbit of the asymmetric map, same signature style as iterate_map."""
+    beta = 2.0 - alpha
+    x_c = alpha / 2.0
+    traj = np.empty(n_steps + 1)
+    traj[0] = x0
+    x = x0
+    for i in range(n_steps):
+        if x <= 0.0 or x >= 1.0:
+            x = 0.0
+        else:
+            x = R * (x / x_c) ** alpha * ((1.0 - x) / (1.0 - x_c)) ** beta
+        traj[i + 1] = x
+    return traj
+
+
+def compute_lyapunov_asym(R, alpha, n_steps=20_000, burn_in=1_000, x0=None):
+    """Lyapunov exponent of the asymmetric map at (R, alpha)."""
+    if x0 is None:
+        x0 = np.random.default_rng(seed=42).uniform(0.2, 0.8)
+    x = x0
+    for _ in range(burn_in):
+        x = asym_map(x, R, alpha)
+    log_sum, count = 0.0, 0
+    for _ in range(n_steps):
+        d = abs(asym_derivative(x, R, alpha))
+        if d > 1e-12:
+            log_sum += np.log(d)
+            count += 1
+        x = asym_map(x, R, alpha)
+    return log_sum / count if count > 0 else float("nan")
+
+
+def r_to_R(r):
+    """Logistic r -> peak height R. Both families peak at the same height."""
+    return r / 4.0
+
+
+def R_to_r(R):
+    return 4.0 * R

@@ -48,4 +48,9 @@ echo "=== task ${SLURM_ARRAY_TASK_ID} on $(hostname) ==="
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
 echo "args: ${ARGS}"
 
-python scripts/train_subset.py ${ARGS}
+# Which trainer to run. Defaults to the r-subset trainer; the asymmetric-family
+# sweep sets TRAIN_SCRIPT=scripts/train_asym_band.py.
+TRAIN_SCRIPT="${TRAIN_SCRIPT:-scripts/train_subset.py}"
+echo "trainer: ${TRAIN_SCRIPT}"
+
+python "${TRAIN_SCRIPT}" ${ARGS}

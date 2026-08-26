@@ -105,3 +105,60 @@ def make_eval_grid(n_points=1000, r_range=(0.5, 4.0),
     print(f"Computing {n_points} Lyapunov exponents...")
     lyapunovs = compute_lyapunov_array(r_grid, n_steps=n_lyapunov_steps, verbose=verbose)
     return r_grid, lyapunovs
+
+class AsymMapDataset(Dataset):
+    """
+    Tokenized trajectories of the asymmetric unimodal family.
+
+    Unlike DiscreteMapDataset, a task here is a PAIR (R, alpha): R is the peak
+    height (R = r/4 recovers the logistic map at alpha = 1) and alpha sets the
+    peak position x_c = alpha/2.
+
+    Each sample: (context_tokens, target_token, R_value)
+    The R label is returned in the third slot so the collate signature matches
+    DiscreteMapDataset and the shared Trainer needs no changes.
+    """
+    def __init__(self, params, context_len=50, burn_in=0, traj_len=150,
+                 n_bins=64, seed=0):
+        super().__init__()
+        from .maps import iterate_asym  # local import keeps module import light
+
+        self.context_len = context_len
+        self.n_bins = n_bins
+        params = np.asarray(params, dtype=float).reshape(-1, 2)
+
+        rng = np.random.default_rng(seed)
+        x0s = rng.uniform(0.05, 0.95, size=len(params))
+        window_size = context_len + 1
+
+        contexts_list, targets_list, label_list = [], [], []
+        for i, (R, alpha) in enumerate(params):
+            traj = iterate_asym(x0s[i], R, alpha, burn_in + traj_len)[burn_in:]
+            tokens = tokenize_trajectory(traj, n_bins)
+            for t in range(len(tokens) - window_size):
+                contexts_list.append(tokens[t : t + context_len])
+                targets_list.append(tokens[t + context_len])
+                label_list.append(R)
+
+        if contexts_list:
+            contexts = np.asarray(contexts_list, dtype=np.int64)
+            targets = np.asarray(targets_list, dtype=np.int64)
+        else:
+            contexts = np.empty((0, context_len), dtype=np.int64)
+            targets = np.empty((0,), dtype=np.int64)
+
+        self.token_counts = (
+            np.bincount(contexts.reshape(-1), minlength=n_bins)
+            + np.bincount(targets, minlength=n_bins)
+        ).astype(np.int64)
+
+        self.contexts = torch.tensor(contexts, dtype=torch.long)
+        self.targets = torch.tensor(targets, dtype=torch.long)
+        self.r_labels = torch.tensor(np.array(label_list), dtype=torch.float32)
+        self.params = params
+
+    def __len__(self):
+        return len(self.contexts)
+
+    def __getitem__(self, idx):
+        return self.contexts[idx], self.targets[idx], self.r_labels[idx]

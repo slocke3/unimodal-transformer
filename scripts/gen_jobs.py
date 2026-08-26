@@ -68,12 +68,21 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--mode",
                     choices=["window", "strategy", "boundary", "budget",
-                             "diversity"],
+                             "diversity", "asymband"],
                     default="window")
     ap.add_argument("--budgets", type=int, nargs="+",
                     default=[4000, 2000, 1000, 500, 250, 100],
                     help="budget mode: data budgets N (uniform-random full-range, "
                          "1 traj/r)")
+    ap.add_argument("--band_widths", type=float, nargs="+",
+                    default=[0.0, 0.025, 0.05, 0.075, 0.1, 0.15, 0.2, 0.25,
+                             0.3, 0.4],
+                    help="asymband mode: half-widths w, training on "
+                         "alpha ~ U[1-w, 1]. w=0 is the logistic-only zero-shot "
+                         "arm. Capped at 0.5 so alpha stays <= 1: above alpha=1 "
+                         "the origin becomes superattracting and orbits die.")
+    ap.add_argument("--n_tasks", type=int, default=8000,
+                    help="asymband mode: distinct (R, alpha) training pairs")
     ap.add_argument("--ms_diversity", type=int, nargs="+",
                     default=[1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048,
                              4096, 8000],
@@ -165,6 +174,22 @@ def main():
                         f"--batch_size {a.batch_size} --val_frac {a.val_frac} "
                         f"--full_lo {a.lo} --full_hi {a.hi} {protocol} "
                         f"--seed {seed} --out_dir {a.out_base}/{name}")
+    elif a.mode == "asymband":
+        # One model per training band alpha ~ U[1-w, 1], everything else fixed.
+        # These lines drive scripts/train_asym_band.py, so submit with
+        # TRAIN_SCRIPT=scripts/train_asym_band.py.
+        for w in a.band_widths:
+            if not 0.0 <= w <= 0.5:
+                raise ValueError(f"band width {w} outside [0, 0.5]")
+            for seed in a.seeds:
+                name = f"asym_w{w:g}_seed{seed}"
+                lines.append(
+                    f"--band_width {w:g} --n_tasks {a.n_tasks} "
+                    f"--n_train_traj {a.n_train_traj} "
+                    f"--context_len {a.context_len} --n_bins {a.n_bins} "
+                    f"--max_steps {a.max_steps} --log_points {a.log_points} "
+                    f"--max_val_traj {a.max_val_traj} "
+                    f"--seed {seed} --out_dir {a.out_base}/{name}")
     elif a.mode == "diversity":
         # Total data fixed; only the number of distinct tasks changes. Every run
         # also gets the same gradient-step budget, so neither data quantity nor
@@ -223,6 +248,14 @@ def main():
     elif a.mode == "boundary":
         print(f"  r_max prefixes: {len(a.r_maxes)} x {len(a.seeds)} seed")
         print(f"  r_min suffixes: {len(a.r_mins)} x {len(a.seeds)} seed")
+    elif a.mode == "asymband":
+        print(f"  band widths {a.band_widths} x {len(a.seeds)} seed | "
+              f"{a.n_tasks} (R,alpha) tasks, {a.n_train_traj} trajectories, "
+              f"{a.max_steps} steps")
+        for w in a.band_widths:
+            tag = "   (logistic only -- zero-shot arm)" if w == 0 else ""
+            print(f"    w={w:<6g}: train alpha in [{1 - w:.3f}, 1.000]{tag}")
+        print("  submit with TRAIN_SCRIPT=scripts/train_asym_band.py")
     elif a.mode == "diversity":
         print(f"  m={a.ms_diversity} x {len(a.seeds)} seed | "
               f"total trajectories fixed at {a.n_train_traj}, "

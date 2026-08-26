@@ -111,6 +111,12 @@ class Trainer:
         self.model.train()
         it = iter(self.train_loader)
         t0, run_loss, run_n = time.time(), 0.0, 0
+        # Track the best-val point along this same trajectory. Saving it lets a
+        # single fixed-step run report BOTH protocols: the final weights are the
+        # fixed-step result, the bestval tag is the early-stopping result. The
+        # optimizer path is then identical for the two, so any difference is
+        # attributable to checkpoint selection alone.
+        best_val, best_step = float("inf"), 0
         for step in range(1, S + 1):
             try:
                 context, target, _ = next(it)
@@ -130,15 +136,25 @@ class Trainer:
                 self.train_losses.append(run_loss / run_n); run_loss, run_n = 0.0, 0
                 val_loss = self._eval(self.val_loader); self.model.train()
                 self.val_losses.append(val_loss)
+                marker = ""
+                if val_loss < best_val:
+                    best_val, best_step = val_loss, step
+                    self.best_val_loss, self.best_epoch = val_loss, step
+                    self._save_checkpoint("bestval")
+                    marker = " *"
                 print(f"Step {step:6d}/{S} | train {self.train_losses[-1]:.4f} | "
-                      f"val {val_loss:.4f} | {time.time()-t0:.1f}s")
+                      f"val {val_loss:.4f} | {time.time()-t0:.1f}s{marker}")
 
-        self.best_val_loss = self._eval(self.val_loader)
+        final_val = self._eval(self.val_loader)
+        self.best_val_loss = final_val
         self.best_epoch = S   # stores the step count in the 'epoch' slot
         self._save_checkpoint("best"); self._save_checkpoint("final")
+        print(f"Fixed-step done: final val {final_val:.4f} | "
+              f"best val {best_val:.4f} at step {best_step}")
         return {"train_losses": self.train_losses, "val_losses": self.val_losses,
-                "best_epoch": self.best_epoch, "best_val_loss": self.best_val_loss,
-                "total_steps": S}
+                "best_epoch": self.best_epoch, "best_val_loss": final_val,
+                "final_val_loss": final_val, "bestval_loss": best_val,
+                "bestval_step": best_step, "total_steps": S}
 
     def train(self):
         if self.config.max_steps is not None:

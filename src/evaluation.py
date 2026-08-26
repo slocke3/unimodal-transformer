@@ -272,3 +272,51 @@ def plot_trajectory_comparison(model, r_values, device, context_len, n_bins,
     if save_path:
         plt.savefig(save_path, dpi=150, bbox_inches="tight")
     return fig
+
+def evaluate_asym_grid(model, alpha_grid, R_grid, device, context_len, n_bins,
+                       burn_in=0, n_eval_per_point=30, traj_len=150, seed=99):
+    """
+    Cross-entropy / accuracy over the 2-D (alpha, R) parameter plane of the
+    asymmetric family. Returns arrays of shape (len(alpha_grid), len(R_grid)),
+    so a row is "loss across peak heights at fixed asymmetry" and a column is
+    "loss across asymmetry at fixed R".
+
+    Also returns the dead fraction: the share of evaluation trajectories that
+    collapse onto the superattracting origin. Those sequences are trivially
+    predictable (a constant token), so a low CE at a point with a high dead
+    fraction reflects a degenerate task rather than successful generalization.
+    """
+    from .maps import iterate_asym
+
+    model.eval()
+    rng = np.random.default_rng(seed)
+    criterion = nn.CrossEntropyLoss(reduction="mean")
+    window_size = context_len + 1
+    shape = (len(alpha_grid), len(R_grid))
+    ce = np.full(shape, np.nan)
+    acc = np.full(shape, np.nan)
+    dead = np.zeros(shape)
+
+    for i, alpha in enumerate(alpha_grid):
+        for j, R in enumerate(R_grid):
+            contexts, targets, n_dead = [], [], 0
+            for _ in range(n_eval_per_point):
+                x0 = rng.uniform(0.05, 0.95)
+                traj = iterate_asym(x0, R, alpha, burn_in + traj_len)[burn_in:]
+                if np.all(traj[len(traj) // 2:] < 1e-8):
+                    n_dead += 1
+                tokens = tokenize_trajectory(traj, n_bins)
+                for t in range(len(tokens) - window_size):
+                    contexts.append(tokens[t : t + context_len])
+                    targets.append(tokens[t + context_len])
+            dead[i, j] = n_dead / max(1, n_eval_per_point)
+
+            ctx = torch.tensor(np.array(contexts), dtype=torch.long).to(device)
+            tgt = torch.tensor(np.array(targets), dtype=torch.long).to(device)
+            with torch.no_grad():
+                logits = model(ctx)
+            ce[i, j] = criterion(logits, tgt).item()
+            acc[i, j] = (logits.argmax(dim=-1) == tgt).float().mean().item()
+        print(f"  asym eval: alpha {i+1}/{len(alpha_grid)}", flush=True)
+
+    return ce, acc, dead
