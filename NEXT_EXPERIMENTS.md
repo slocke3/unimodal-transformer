@@ -173,3 +173,91 @@ separates "the model extrapolates" from "the test got easier", which the current
 design confounds. The alpha axis is bounded below near 0.15, so a fixed-distance
 design needs either a smaller `d` or a parameterisation with more room — worth
 settling before spending another 14 GPU-days.
+
+## The confound-free criterion: distance to the binning floor
+
+The clamping problem has a clean way out that needs no change of geometry.
+Rather than asking "is the implied map closer to the truth or to the band edge",
+ask **how close is it to the binning floor** — the RMS error that bin
+quantisation alone forces, which no model can beat. Clamping to the band edge
+produces a specific, non-vanishing error; only genuine identification reaches
+the floor. The criterion is absolute, so it does not care how far the held-out
+task is from the band.
+
+Applied to the existing probe (RMS / floor):
+
+| band | interior of band | near band edge | held out |
+|------|------------------|----------------|----------|
+| [0.95, 1] | 1.2 | — | 9.4 - 27.4 |
+| [0.70, 1] | 0.9 - 1.2 | — | 7.9 - 22.4 |
+| [0.45, 1] | 1.1 - 1.9 | 3.5 | 9.7 - 16.8 |
+| [0.30, 1] | 1.2 - 1.9 | 3.2 - 5.0 | 6.7 |
+
+Identification is *at the floor* in the interior of every training band,
+degrades toward the edges, and never approaches the floor on a held-out task —
+best case 6.7x, for a task sitting immediately adjacent to the band. This
+confirms the negative result independently of the bad null.
+
+It also exposes the specialization cost sharply: the widest model is 5.0x the
+floor at `alpha = 1`, a map it trained on, against 1.2x for the narrow-band
+models. Wide bands buy coverage at the price of precision at their own edges.
+
+## The design fix: hold the distance, not the position
+
+For each band width `w`, evaluate at `alpha_lo - d` for a common `d`, instead of
+at fixed absolute positions. Then widening the band does not bring the test
+closer, and the loss curve against `w` is no longer contaminated by the test
+becoming easier. Report RMS/floor alongside cross-entropy so the absolute
+criterion is always visible.
+
+## Families tested for a cleaner transition
+
+Both candidates were checked numerically before proposing them, because the
+`alpha` family's superattracting-origin degeneracy was missed the first time.
+
+### A. Tilted logistic — RECOMMENDED
+
+    f_s(x) = C x(1-x) (1 + s(x - 1/2)),   C normalising the peak to R
+
+`s = 0` is the logistic map exactly. Both endpoint exponents stay at 1.00 for
+every `s`, so neither endpoint ever becomes superattracting — the defect that
+forced `alpha <= 1` is absent by construction. Verified usable over
+`s in [-1.9, +1.4]`: zero orbit death throughout, `f'(0) > 1` everywhere in
+range (it crosses 1 near `s = 1.45`, which is the true boundary), and the peak
+sweeps `x_c` from 0.338 to 0.636.
+
+The advantage over the `alpha` family is that the base map sits in the
+*interior* of the usable range, so a band `|s| <= w` centred on logistic has
+held-out regions on **both** sides. Combined with fixed-distance testing that
+gives two independent held-out probes per model.
+
+The cost is a smaller deformation range: the peak moves +/-0.14 about 0.5,
+against 0.25-0.50 for the `alpha` family. Whether that is enough deformation to
+make the task hard is worth checking before committing GPU time.
+
+### B. Spherical deformation — REJECTED, does not stay unimodal
+
+    f_u(x) = C x(1-x) exp(rho * sum_k u_k sin(k pi x)),   u on the unit sphere
+
+The idea was to reproduce the paper's geometry exactly: a homogeneous sphere of
+task *directions* at fixed deformation amplitude, logistic as the undeformed
+centre, cap training and antipodal testing. Endpoints stay regular and orbits
+survive at moderate `rho`.
+
+But most directions do not give a unimodal map, and it worsens with dimension —
+the fraction with exactly one interior maximum is 0.75 at `K=3, rho=0.4`, 0.45
+at `K=4`, and **0.07 at `K=6`**. Rejecting the multimodal directions would
+destroy the homogeneity that motivated the sphere in the first place. Any
+sphere-like construction here needs a basis that preserves unimodality by
+construction, which the sine basis does not.
+
+### What the geometry question actually turns on
+
+The bounded one-dimensional task space is not the real obstacle, because the
+floor criterion above is absolute and does not degrade as the band widens. The
+open question is whether the generalized solution is *reachable* at all: the
+models already identify maps at the binning floor **inside** the band, so the
+identification mechanism exists — it simply does not extend past the training
+support. A family with fewer parameters and the base map interior to the range
+(A) is the best next bet, and the floor criterion will detect a transition in
+whatever geometry it happens.
