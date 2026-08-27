@@ -19,6 +19,18 @@ held-out task, while genuine in-context identification can. That sidesteps the
 "is it closer to the truth or to the band edge" question entirely, which is
 where the previous analysis went wrong.
 
+Both readings are shown, because they answer different questions and the
+difference is itself informative:
+
+  fixed distance   probes at s = +/-(w + d). The band edge is always d away, so
+                   a widening band does not make its own test easier. This is
+                   the confound-free reading of "does it generalize".
+  position swept   loss at EVERY out-of-band s, the classic view. Richer, but
+                   as w grows the surviving out-of-band positions are the ones
+                   closest to the edge, so improvement here mixes "the model got
+                   better" with "the remaining test got easier". Reading the two
+                   side by side makes that visible rather than hidden.
+
 Reads eval_asym.npz only; torch-free.
 """
 import argparse
@@ -50,6 +62,7 @@ def load(root):
             "r_in": float(np.nanmean(ratio[ib][:, keep])),
             "r_held": float(np.nanmean(ratio[hm][:, keep])) if hm.any() else np.nan,
             "ratio_by_s": np.nanmean(ratio[:, keep], axis=1),
+            "ce_by_s": np.nanmean(z["ce_final"][:, keep], axis=1),
         })
     if not runs:
         raise FileNotFoundError(f"no runs under {root}")
@@ -84,7 +97,8 @@ def main():
         print("%6g %8.0f%% %7d | %9.4f %9.4f | %9.2f %9.2f"
               % (w, cov[i], len(runs[w]), ce_in[i], ce_ho[i], r_in[i], r_ho[i]))
 
-    fig, axes = plt.subplots(1, 3, figsize=(16.4, 4.8))
+    fig, axes2 = plt.subplots(2, 3, figsize=(16.4, 9.4))
+    axes = axes2[0]
 
     ax = axes[0]
     ax.errorbar(cov, r_ho, yerr=r_ho_sd, fmt="-o", color="#D85A30", lw=2.1,
@@ -132,8 +146,73 @@ def main():
     ax.grid(alpha=0.25, which="both", lw=0.4)
     ax.legend(fontsize=6.5, ncol=2)
 
-    fig.suptitle("Tilted-logistic family: band symmetric about logistic, "
-                 "held-out probes at fixed distance past each edge", fontsize=12)
+    # ---------- row 2: the position-swept ("old style") reading -----------
+    cmap = plt.get_cmap("viridis")
+    s_grid = runs[ws[0]][0]["s"]
+
+    def mean_over_seeds(w, key):
+        return np.mean([r[key] for r in runs[w]], axis=0)
+
+    ax = axes2[1][0]
+    for i, w in enumerate(ws):
+        c = cmap(i / max(1, len(ws) - 1))
+        ax.plot(s_grid, mean_over_seeds(w, "ce_by_s"), lw=1.6, color=c,
+                label=f"w={w:g}")
+        for edge in (-w, w):
+            ax.axvline(edge, color=c, lw=0.7, ls=":", alpha=0.55)
+    ax.set_yscale("log")
+    ax.set_xlabel("$s$   (dotted lines mark each model's band edges)")
+    ax.set_ylabel("Cross-entropy (nats)")
+    ax.set_title("Position-swept: loss at every $s$\n"
+                 "(the classic view)", fontsize=10.5)
+    ax.grid(alpha=0.25, which="both", lw=0.4)
+    ax.legend(fontsize=6.5, ncol=2)
+
+    ax = axes2[1][1]
+    for i, w in enumerate(ws):
+        c = cmap(i / max(1, len(ws) - 1))
+        ax.plot(s_grid, mean_over_seeds(w, "ratio_by_s"), lw=1.6, color=c,
+                label=f"w={w:g}")
+    ax.axhline(1.0, color="#2E7D32", ls="--", lw=1.6)
+    ax.set_yscale("log")
+    ax.set_xlabel("$s$")
+    ax.set_ylabel("Implied-map RMS / binning floor")
+    ax.set_title("Position-swept: identification quality at every $s$\n"
+                 "(1.0 = optimal for a binned model)", fontsize=10.5)
+    ax.grid(alpha=0.25, which="both", lw=0.4)
+    ax.legend(fontsize=6.5, ncol=2)
+
+    # fixed OOD POSITIONS: the reading that conflates distance with generalization
+    ax = axes2[1][2]
+    targets = [t for t in (0.7, 0.9, 1.1) if t <= s_grid.max() + 1e-9]
+    for k, t in enumerate(targets):
+        j = int(np.argmin(np.abs(s_grid - t)))
+        vals, covs = [], []
+        for i, w in enumerate(ws):
+            if t <= w + 1e-9:            # in band for this model: not a test
+                continue
+            vals.append(mean_over_seeds(w, "ratio_by_s")[j])
+            covs.append(cov[i])
+        ax.plot(covs, vals, "-o", ms=5, lw=1.8,
+                color=plt.get_cmap("plasma")(k / max(1, len(targets) - 1)),
+                label=f"fixed position $s$={s_grid[j]:.2f}")
+    ax.errorbar(cov, r_ho, yerr=r_ho_sd, fmt="--s", color="#444444", lw=1.6,
+                ms=5, capsize=3, mfc="white",
+                label="fixed DISTANCE (confound-free)")
+    ax.axhline(1.0, color="#2E7D32", ls="--", lw=1.6)
+    ax.set_yscale("log")
+    ax.set_xlabel(r"Training-band coverage (%)")
+    ax.set_ylabel("Implied-map RMS / binning floor")
+    ax.set_title("Fixed position vs fixed distance\n"
+                 "curves ending early = that $s$ fell inside the band",
+                 fontsize=10.5)
+    ax.grid(alpha=0.25, which="both", lw=0.4)
+    ax.legend(fontsize=7)
+
+    fig.suptitle("Tilted-logistic family: band symmetric about logistic. "
+                 "Top row: probes at fixed DISTANCE past the edge.  "
+                 "Bottom row: swept over all out-of-band POSITIONS.",
+                 fontsize=12)
     fig.tight_layout()
     out = Path(a.out_dir); out.mkdir(parents=True, exist_ok=True)
     for ext in ("png", "pdf"):
