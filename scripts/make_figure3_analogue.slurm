@@ -6,7 +6,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16G
-#SBATCH --time=03:00:00
+#SBATCH --time=05:00:00
 
 set -eo pipefail
 cd "${SLURM_SUBMIT_DIR}"
@@ -19,7 +19,14 @@ export PYTHONUNBUFFERED=1
 export PYTHONPATH="${SLURM_SUBMIT_DIR}:${PYTHONPATH:-}"
 
 echo "=== model-free reference predictors on the held-out region ==="
+# Cost scales as sum_w n_cand(w) x n_cells x n_contexts. The first attempt
+# (855 candidates, 36 cells, 21600 contexts) got through one order in 3 h, so
+# the candidate grid and the held-out sample are both thinned here. The
+# quantities are means over held-out cells, so this costs precision, not bias.
 python scripts/baseline_band_bayes.py \
+    --cand_alpha_step 0.025 --n_cand_R 8 \
+    --R_eval 0.4 0.65 0.85 1.0 --n_traj 4 \
+    --eps_grid 3e-3 3e-2 3e-1 \
     --out figures_asym2/band_bayes_baseline.npz
 
 echo
