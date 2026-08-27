@@ -102,44 +102,62 @@ def main():
 
     # -- figure: implied map vs the two candidate truths -------------------
     n_run, n_al = len(results), len(a.alphas)
-    fig, axes = plt.subplots(n_run, n_al, figsize=(2.9 * n_al, 3.1 * n_run),
+    fig, axes = plt.subplots(n_run, n_al, figsize=(3.0 * n_al, 3.2 * n_run),
                              squeeze=False, sharex=True, sharey=True)
     xs = np.linspace(0, 1, 400)
-    true_1 = np.array([asym_map(float(x), a.R, 1.0) for x in xs])
+    trained = np.array([asym_map(float(x), a.R, 1.0) for x in xs])
+    handles = None
     for i, (run, res) in enumerate(results.items()):
         for j, row in enumerate(res["rows"]):
             ax = axes[i][j]
-            true_a = np.array([asym_map(float(x), a.R, row["alpha"]) for x in xs])
-            ax.plot(xs, true_1, lw=1.3, color="#1B2A4A", ls="--",
-                    label=r"trained map ($\alpha$=1)")
-            ax.plot(xs, true_a, lw=1.6, color="#2E7D32",
-                    label=rf"true $\alpha$={row['alpha']:g}")
-            ax.plot(row["x"], row["e"], ".", ms=1.6, alpha=0.35,
-                    color="#D85A30", label="model implied")
-            ax.set_title(rf"$\alpha$={row['alpha']:g}"
-                         + ("  (in band)" if row["in_band"] else ""),
-                         fontsize=9)
-            ax.set_xlim(0, 1); ax.set_ylim(0, 1.05)
+            true_a = np.array([asym_map(float(x), a.R, row["alpha"])
+                               for x in xs])
+            h1, = ax.plot(xs, trained, lw=1.6, color="#1B2A4A", ls="--")
+            h2, = ax.plot(xs, true_a, lw=1.9, color="#2E7D32")
+            h3, = ax.plot(row["x"], row["e"], ".", ms=1.8, alpha=0.35,
+                          color="#D85A30")
+            handles = (h1, h2, h3)
+            tag = "IN BAND" if row["in_band"] else "held out"
+            ax.set_title(rf"$\alpha$={row['alpha']:g}   ({tag})", fontsize=9.5,
+                         color="#1B2A4A" if row["in_band"] else "#B71C1C")
+            ax.set_xlim(0, 1); ax.set_ylim(0, 1.08)
             if j == 0:
-                ax.set_ylabel(f"w={res['P']['band_width']:g}\n$E[x_{{n+1}}]$",
-                              fontsize=9)
+                ax.set_ylabel(f"trained on\n"
+                              rf"$\alpha \in [{res['band_lo']:.2f}, 1]$"
+                              f"\n(w={res['P']['band_width']:g})"
+                              "\n\n$E[x_{n+1}\,|\,x_n]$", fontsize=9)
             if i == n_run - 1:
                 ax.set_xlabel("$x_n$")
-            if i == 0 and j == 0:
-                ax.legend(fontsize=6)
+
+    fig.legend(handles,
+               [r"map the model was TRAINED on ($\alpha=1$, band centre)",
+                r"TRUE map generating this panel's context ($g_{R,\alpha}$)",
+                r"model's implied $E[x_{n+1}\,|\,x_n]$"],
+               loc="lower center", ncol=3, fontsize=10, frameon=True,
+               bbox_to_anchor=(0.5, -0.015))
     fig.suptitle("Implied return map at $R=1$: does the model track the true "
-                 "map or the one it was trained on?", fontsize=12)
-    fig.tight_layout()
+                 "map, or the one it was trained on?\n"
+                 "Orange on green = it identified the map from context;  "
+                 "orange on dashed navy = it is applying a memorized map",
+                 fontsize=12.5)
+    fig.tight_layout(rect=[0, 0.035, 1, 1])
 
     out = Path(a.out_dir); out.mkdir(parents=True, exist_ok=True)
     for ext in ("png", "pdf"):
         fig.savefig(out / f"return_map_probe.{ext}", dpi=160,
                     bbox_inches="tight")
-    np.savez(out / "return_map_probe.npz",
-             **{f"{os.path.basename(r)}_{k}": np.array(
-                    [row[k] for row in res["rows"]])
-                for r, res in results.items()
-                for k in ("alpha", "d_true", "d_train", "floor")})
+    payload = {f"{os.path.basename(r)}_{k}": np.array(
+                   [row[k] for row in res["rows"]])
+               for r, res in results.items()
+               for k in ("alpha", "d_true", "d_train", "floor")}
+    # keep the raw clouds too: re-plotting then needs no GPU and no checkpoint
+    for r, res in results.items():
+        b = os.path.basename(r)
+        payload[f"{b}_band_lo"] = np.array(res["band_lo"])
+        for row in res["rows"]:
+            payload[f"{b}_x_{row['alpha']:g}"] = row["x"]
+            payload[f"{b}_e_{row['alpha']:g}"] = row["e"]
+    np.savez(out / "return_map_probe.npz", **payload)
     print(f"\nwrote {out}/return_map_probe.png")
 
 
