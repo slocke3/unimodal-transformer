@@ -273,8 +273,27 @@ def plot_trajectory_comparison(model, r_values, device, context_len, n_bins,
         plt.savefig(save_path, dpi=150, bbox_inches="tight")
     return fig
 
+def binning_floor(R, p, n_bins, family="asym", n=20000, seed=0):
+    """RMS spread of f across one bin: the error bin quantisation alone forces.
+
+    No binned predictor can beat this, so CE and implied-map error are only
+    interpretable relative to it. Crucially it is an ABSOLUTE reference: a model
+    that clamps to the edge of its training band cannot reach the floor on a
+    held-out task, while genuine identification can, so floor-relative error
+    separates the two without needing a "what would clamping predict" null.
+    """
+    from .maps import family_map_vec
+    rng = np.random.default_rng(seed)
+    xq = rng.uniform(0, 1, n)
+    ctr = (np.floor(xq * n_bins) + 0.5) / n_bins
+    t = family_map_vec(xq, R, p, family)
+    a = family_map_vec(ctr, R, p, family)
+    return float(np.sqrt(np.mean((t - a) ** 2)))
+
+
 def evaluate_asym_grid(model, alpha_grid, R_grid, device, context_len, n_bins,
-                       burn_in=0, n_eval_per_point=30, traj_len=150, seed=99):
+                       burn_in=0, n_eval_per_point=30, traj_len=150, seed=99,
+                       family="asym", return_implied=False):
     """
     Cross-entropy / accuracy over the 2-D (alpha, R) parameter plane of the
     asymmetric family. Returns arrays of shape (len(alpha_grid), len(R_grid)),
@@ -286,7 +305,7 @@ def evaluate_asym_grid(model, alpha_grid, R_grid, device, context_len, n_bins,
     predictable (a constant token), so a low CE at a point with a high dead
     fraction reflects a degenerate task rather than successful generalization.
     """
-    from .maps import iterate_asym
+    from .maps import iterate_family, family_map_vec, detokenize
 
     model.eval()
     rng = np.random.default_rng(seed)
@@ -296,13 +315,17 @@ def evaluate_asym_grid(model, alpha_grid, R_grid, device, context_len, n_bins,
     ce = np.full(shape, np.nan)
     acc = np.full(shape, np.nan)
     dead = np.zeros(shape)
+    imp_rms = np.full(shape, np.nan)
+    floor = np.full(shape, np.nan)
+    centers = (np.arange(n_bins) + 0.5) / n_bins
 
     for i, alpha in enumerate(alpha_grid):
         for j, R in enumerate(R_grid):
             contexts, targets, n_dead = [], [], 0
             for _ in range(n_eval_per_point):
                 x0 = rng.uniform(0.05, 0.95)
-                traj = iterate_asym(x0, R, alpha, burn_in + traj_len)[burn_in:]
+                traj = iterate_family(x0, R, alpha, burn_in + traj_len,
+                                      family)[burn_in:]
                 if np.all(traj[len(traj) // 2:] < 1e-8):
                     n_dead += 1
                 tokens = tokenize_trajectory(traj, n_bins)
@@ -317,6 +340,16 @@ def evaluate_asym_grid(model, alpha_grid, R_grid, device, context_len, n_bins,
                 logits = model(ctx)
             ce[i, j] = criterion(logits, tgt).item()
             acc[i, j] = (logits.argmax(dim=-1) == tgt).float().mean().item()
+            if return_implied:
+                # implied return map, from the SAME forward pass
+                pr = torch.softmax(logits, dim=-1).detach().cpu().numpy()
+                e_next = pr @ centers
+                last_x = detokenize(ctx[:, -1].detach().cpu().numpy(), n_bins)
+                truth = family_map_vec(last_x, R, alpha, family)
+                imp_rms[i, j] = float(np.sqrt(np.mean((e_next - truth) ** 2)))
+                floor[i, j] = binning_floor(R, alpha, n_bins, family)
         print(f"  asym eval: alpha {i+1}/{len(alpha_grid)}", flush=True)
 
+    if return_implied:
+        return ce, acc, dead, imp_rms, floor
     return ce, acc, dead

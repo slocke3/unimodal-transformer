@@ -80,6 +80,14 @@ def main():
                     help="asymband mode: half-widths w, training on "
                          "alpha ~ U[1-w, 1]. w=0 is the logistic-only zero-shot "
                          "arm. Capped at 0.8 so alpha stays in [0.2, 1.0].")
+    ap.add_argument("--family", choices=["asym", "tilted"], default="asym",
+                    help="asymband mode: which map family to sweep")
+    ap.add_argument("--heldout_d", type=float, default=0.2,
+                    help="asymband mode: fixed distance beyond the band edge "
+                         "at which the held-out probes sit")
+    ap.add_argument("--p_eval_hi", type=float, default=1.2,
+                    help="tilted: eval grid spans [-p_eval_hi, +p_eval_hi]")
+    ap.add_argument("--n_R_eval", type=int, default=60)
     ap.add_argument("--alpha_eval_lo", type=float, default=0.5,
                     help="asymband mode: lowest alpha in the evaluation grid")
     ap.add_argument("--n_alpha_eval", type=int, default=26,
@@ -182,13 +190,19 @@ def main():
         # These lines drive scripts/train_asym_band.py, so submit with
         # TRAIN_SCRIPT=scripts/train_asym_band.py.
         for w in a.band_widths:
-            # 0.8 keeps alpha >= 0.2: above 1 the origin is superattracting,
-            # below ~0.15 orbit collapse reappears.
-            if not 0.0 <= w <= 0.8:
-                raise ValueError(f"band width {w} outside [0, 0.8]")
+            # asym: 0.8 keeps alpha >= 0.2 (above 1 the origin is
+            # superattracting, below ~0.15 orbits collapse).
+            # tilted: 1.0 keeps |s| <= 1.0, well inside the s=1.45 boundary
+            # where f'(0) drops through 1.
+            cap = 0.8 if a.family == "asym" else 1.0
+            if not 0.0 <= w <= cap:
+                raise ValueError(f"band width {w} outside [0, {cap}] "
+                                 f"for family {a.family}")
             for seed in a.seeds:
                 name = f"asym_w{w:g}_seed{seed}"
                 lines.append(
+                    f"--family {a.family} --heldout_d {a.heldout_d} "
+                    f"--p_eval_hi {a.p_eval_hi} --n_R_eval {a.n_R_eval} "
                     f"--band_width {w:g} --n_tasks {a.n_tasks} "
                     f"--n_train_traj {a.n_train_traj} "
                     f"--context_len {a.context_len} --n_bins {a.n_bins} "

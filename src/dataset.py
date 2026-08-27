@@ -119,9 +119,9 @@ class AsymMapDataset(Dataset):
     DiscreteMapDataset and the shared Trainer needs no changes.
     """
     def __init__(self, params, context_len=50, burn_in=0, traj_len=150,
-                 n_bins=64, seed=0):
+                 n_bins=64, seed=0, family="asym"):
         super().__init__()
-        from .maps import iterate_asym  # local import keeps module import light
+        from .maps import iterate_family  # local import keeps module light
 
         self.context_len = context_len
         self.n_bins = n_bins
@@ -133,7 +133,8 @@ class AsymMapDataset(Dataset):
 
         contexts_list, targets_list, label_list = [], [], []
         for i, (R, alpha) in enumerate(params):
-            traj = iterate_asym(x0s[i], R, alpha, burn_in + traj_len)[burn_in:]
+            traj = iterate_family(x0s[i], R, alpha, burn_in + traj_len,
+                                  family)[burn_in:]
             tokens = tokenize_trajectory(traj, n_bins)
             for t in range(len(tokens) - window_size):
                 contexts_list.append(tokens[t : t + context_len])

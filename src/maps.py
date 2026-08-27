@@ -1,3 +1,5 @@
+from functools import lru_cache
+
 import numpy as np
 
 
@@ -251,3 +253,118 @@ def r_to_R(r):
 
 def R_to_r(R):
     return 4.0 * R
+
+
+# ---------------------------------------------------------------------------
+# Tilted-logistic family (peak position, with both endpoints kept regular)
+# ---------------------------------------------------------------------------
+#
+#   f_s(x) = C x (1-x) (1 + s (x - 1/2)),    C chosen so max f = R
+#
+# s = 0 is the logistic map exactly (C = 4R, i.e. r = 4R). Unlike the asymmetric
+# family above, BOTH endpoint exponents stay at 1 for every s, so neither
+# endpoint can become superattracting -- the degeneracy that confined that
+# family to alpha <= 1 is absent here by construction. Verified usable over
+# s in [-1.9, +1.4]: no orbit death, and f'(0) > 1 throughout (it crosses 1 near
+# s = 1.45, which is the true boundary). The peak sweeps x_c = 0.338 -> 0.636.
+#
+# The point of this family is that the base map sits in the INTERIOR of the
+# usable range, so a band |s| <= w centred on logistic has held-out regions on
+# both sides of it.
+
+def _tilt_peak(s):
+    """argmax of x(1-x)(1 + s(x-1/2)) on (0,1), by solving the cubic's root."""
+    # f = x(1-x)(1 + s(x-1/2));  f' = -3s x^2 + (3s - 2) x + (1 - s/2)
+    a, b, c = -3.0 * s, 3.0 * s - 2.0, 1.0 - 0.5 * s
+    if abs(a) < 1e-12:
+        return 0.5
+    disc = b * b - 4 * a * c
+    if disc >= 0.0:
+        roots = [r for r in ((-b + np.sqrt(disc)) / (2 * a),
+                             (-b - np.sqrt(disc)) / (2 * a))
+                 if 0.0 < r < 1.0]
+        if roots:
+            return max(roots, key=lambda x: x * (1 - x) * (1 + s * (x - 0.5)))
+    # fallback: no interior stationary point found analytically
+    g = np.linspace(1e-9, 1 - 1e-9, 200001)
+    return float(g[np.argmax(g * (1 - g) * (1 + s * (g - 0.5)))])
+
+
+@lru_cache(maxsize=8192)
+def tilt_norm(s):
+    """C such that max_x C x(1-x)(1 + s(x-1/2)) = 1.
+
+    Cached: the cubic solve was otherwise repeated on every map evaluation,
+    which made the per-cell binning floor ruinously slow.
+    """
+    xc = _tilt_peak(s)
+    return 1.0 / (xc * (1.0 - xc) * (1.0 + s * (xc - 0.5)))
+
+
+def tilted_map(x, R, s):
+    if x <= 0.0 or x >= 1.0:
+        return 0.0
+    v = R * tilt_norm(s) * x * (1.0 - x) * (1.0 + s * (x - 0.5))
+    return v if v > 0.0 else 0.0
+
+
+def iterate_tilted(x0, R, s, n_steps):
+    C = R * tilt_norm(s)
+    traj = np.empty(n_steps + 1)
+    traj[0] = x0
+    x = x0
+    for i in range(n_steps):
+        if x <= 0.0 or x >= 1.0:
+            x = 0.0
+        else:
+            x = C * x * (1.0 - x) * (1.0 + s * (x - 0.5))
+            if x < 0.0:
+                x = 0.0
+        traj[i + 1] = x
+    return traj
+
+
+# --- family dispatch -------------------------------------------------------
+# Both parametric families take (R, p) with R the peak height, so downstream
+# code can stay family-agnostic.
+
+FAMILY_ITERATE = {"asym": iterate_asym, "tilted": iterate_tilted}
+FAMILY_MAP = {"asym": asym_map, "tilted": tilted_map}
+
+
+def iterate_family(x0, R, p, n_steps, family="asym"):
+    return FAMILY_ITERATE[family](x0, R, p, n_steps)
+
+
+def family_map(x, R, p, family="asym"):
+    return FAMILY_MAP[family](x, R, p)
+
+
+def asym_map_vec(x, R, alpha):
+    """Vectorised asym_map."""
+    beta = 2.0 - alpha
+    x_c = alpha / 2.0
+    x = np.asarray(x, dtype=float)
+    out = np.zeros_like(x)
+    m = (x > 0.0) & (x < 1.0)
+    xm = x[m]
+    out[m] = R * (xm / x_c) ** alpha * ((1.0 - xm) / (1.0 - x_c)) ** beta
+    return out
+
+
+def tilted_map_vec(x, R, s):
+    """Vectorised tilted_map."""
+    x = np.asarray(x, dtype=float)
+    out = np.zeros_like(x)
+    m = (x > 0.0) & (x < 1.0)
+    xm = x[m]
+    v = R * tilt_norm(float(s)) * xm * (1.0 - xm) * (1.0 + s * (xm - 0.5))
+    out[m] = np.maximum(v, 0.0)
+    return out
+
+
+FAMILY_MAP_VEC = {"asym": asym_map_vec, "tilted": tilted_map_vec}
+
+
+def family_map_vec(x, R, p, family="asym"):
+    return FAMILY_MAP_VEC[family](x, R, p)
