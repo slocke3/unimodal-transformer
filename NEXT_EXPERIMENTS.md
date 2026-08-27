@@ -118,3 +118,58 @@ no new training and should be run before any of the above.
   across `alpha` — it would normalize by the one thing that does not change.
 - **Reformulating as in-context regression on the return map.** Already done, in
   the paper above.
+
+## CORRECTION (after the extended sweep): no extrapolation was demonstrated
+
+The extended sweep ran and the held-out loss did fall by 9x across the coverage
+range. That was initially read as the transition. It does not survive the right
+control.
+
+**The null was wrong.** The return-map probe compared the model's implied map
+against the map at `alpha = 1`. That is the correct null only for the `w = 0`
+model, which trained on `alpha = 1` alone. Every other model trained on a whole
+*band*, so the meaningful null is the nearest map it actually saw — its band
+edge `alpha_lo` — not `alpha = 1`, which for a wide band is just a distant
+member of its own training set.
+
+Against the correct null, at held-out `alpha = 0.25`:
+
+| run | band | ->true | ->alpha=1 | ->band edge |
+|-----|------|--------|-----------|-------------|
+| w=0.05 | [0.95, 1] | 0.465 | 0.089 | **0.089** |
+| w=0.30 | [0.70, 1] | 0.381 | 0.158 | **0.124** |
+| w=0.55 | [0.45, 1] | 0.286 | 0.286 | **0.175** |
+| w=0.70 | [0.30, 1] | 0.114 | 0.430 | **0.089** |
+
+Every model, at every held-out alpha, sits closer to its band edge than to the
+truth. They clamp to the nearest map they were trained on. Plotted with the
+envelope of the whole training band shaded, the implied maps stay *inside* the
+envelope in every held-out panel — reproducible by some map already seen.
+
+**The falling loss has a mundane explanation.** Holding the held-out region
+fixed at `alpha in [0.20, 0.30]` fixes the *tasks* but not their *distance to
+the band edge*, which shrinks from 0.65 at `w=0.05` to 0.05 at `w=0.70`.
+Clamping to the edge therefore becomes a steadily better approximation, which
+reproduces the loss curve with no generalized solution anywhere.
+
+**The widest run cannot even discriminate.** At `w=0.70`, `alpha=0.25`, the true
+map and the band-edge map differ by RMS 0.046, while the model's own error to
+either is 0.09-0.11. The hypotheses are closer together than the measurement is
+precise, so that panel is uninformative by construction.
+
+### What is actually established
+
+In-band, identification is real and excellent: the implied map sits at the
+binning floor for any alpha inside the training band, at every band width. In
+the phase language of arXiv:2506.05574 all 14 models reached
+*in-task-distribution generalization* and none reached *out-of-task-distribution
+generalization*.
+
+### The design fix
+
+Hold the held-out tasks at a fixed *distance* from the band edge rather than at
+fixed *positions*: for each `w`, test at `alpha_lo - d` for a common `d`. That
+separates "the model extrapolates" from "the test got easier", which the current
+design confounds. The alpha axis is bounded below near 0.15, so a fixed-distance
+design needs either a smaller `d` or a parameterisation with more room — worth
+settling before spending another 14 GPU-days.

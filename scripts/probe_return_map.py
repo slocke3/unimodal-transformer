@@ -81,7 +81,7 @@ def main():
         band_lo = P["alpha_lo"]
         print(f"\n=== {run}   band alpha in [{band_lo:.3f}, 1.000] ===")
         print("%7s %9s %11s %13s %11s %9s"
-              % ("alpha", "in band", "RMS->true", "RMS->trained", "ratio",
+              % ("alpha", "in band", "RMS->true", "RMS->edge", "ratio",
                  "floor"))
         rows = []
         for al in a.alphas:
@@ -89,8 +89,10 @@ def main():
                 model, device, a.R, al, P["n_bins"], P["context_len"],
                 n_traj=a.n_traj)
             d_true = rms_to_map(x, e, a.R, al)
-            # "trained" reference: the map at the band centre, alpha = 1
-            d_train = rms_to_map(x, e, a.R, 1.0)
+            # The model saw a BAND of maps. The meaningful null is the nearest
+            # one it actually trained on -- its band edge -- not alpha=1, which
+            # for a wide band is just a distant member of the training set.
+            d_train = rms_to_map(x, e, a.R, band_lo)
             floor = binning_floor_asym(a.R, al, P["n_bins"])
             inb = al >= band_lo - 1e-9
             rows.append({"alpha": al, "x": x, "e": e, "d_true": d_true,
@@ -105,18 +107,29 @@ def main():
     fig, axes = plt.subplots(n_run, n_al, figsize=(3.0 * n_al, 3.2 * n_run),
                              squeeze=False, sharex=True, sharey=True)
     xs = np.linspace(0, 1, 400)
-    trained = np.array([asym_map(float(x), a.R, 1.0) for x in xs])
     handles = None
     for i, (run, res) in enumerate(results.items()):
+        lo = res["band_lo"]
+        # The model saw a whole BAND of maps, not one. Shade the envelope they
+        # span: anything inside it is reproducible by some map the model was
+        # trained on, so only orange lying on green OUTSIDE the envelope is
+        # evidence of extrapolation.
+        band_alphas = np.linspace(lo, 1.0, 41)
+        fam = np.array([[asym_map(float(x), a.R, al) for x in xs]
+                        for al in band_alphas])
+        env_lo, env_hi = fam.min(axis=0), fam.max(axis=0)
+        edge = np.array([asym_map(float(x), a.R, lo) for x in xs])
         for j, row in enumerate(res["rows"]):
             ax = axes[i][j]
             true_a = np.array([asym_map(float(x), a.R, row["alpha"])
                                for x in xs])
-            h1, = ax.plot(xs, trained, lw=1.6, color="#1B2A4A", ls="--")
+            h0 = ax.fill_between(xs, env_lo, env_hi, color="#1B2A4A",
+                                 alpha=0.16, lw=0)
+            h1, = ax.plot(xs, edge, lw=1.5, color="#1B2A4A", ls="--")
             h2, = ax.plot(xs, true_a, lw=1.9, color="#2E7D32")
             h3, = ax.plot(row["x"], row["e"], ".", ms=1.8, alpha=0.35,
                           color="#D85A30")
-            handles = (h1, h2, h3)
+            handles = (h0, h1, h2, h3)
             tag = "IN BAND" if row["in_band"] else "held out"
             ax.set_title(rf"$\alpha$={row['alpha']:g}   ({tag})", fontsize=9.5,
                          color="#1B2A4A" if row["in_band"] else "#B71C1C")
@@ -130,16 +143,17 @@ def main():
                 ax.set_xlabel("$x_n$")
 
     fig.legend(handles,
-               [r"map the model was TRAINED on ($\alpha=1$, band centre)",
-                r"TRUE map generating this panel's context ($g_{R,\alpha}$)",
+               ["envelope of ALL maps in the training band",
+                r"nearest map in the training band (its edge, $\alpha=\alpha_{lo}$)",
+                r"TRUE map generating this panel's context",
                 r"model's implied $E[x_{n+1}\,|\,x_n]$"],
-               loc="lower center", ncol=3, fontsize=10, frameon=True,
+               loc="lower center", ncol=4, fontsize=9.5, frameon=True,
                bbox_to_anchor=(0.5, -0.015))
-    fig.suptitle("Implied return map at $R=1$: does the model track the true "
-                 "map, or the one it was trained on?\n"
-                 "Orange on green = it identified the map from context;  "
-                 "orange on dashed navy = it is applying a memorized map",
-                 fontsize=12.5)
+    fig.suptitle("Implied return map at $R=1$: is the model extrapolating, or "
+                 "clamping to the nearest map it was trained on?\n"
+                 "Orange inside the shaded envelope = reproducible by some "
+                 "training map.  Only orange on GREEN and OUTSIDE the envelope "
+                 "is extrapolation.", fontsize=12.5)
     fig.tight_layout(rect=[0, 0.035, 1, 1])
 
     out = Path(a.out_dir); out.mkdir(parents=True, exist_ok=True)
