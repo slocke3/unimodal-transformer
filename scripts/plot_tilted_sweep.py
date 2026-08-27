@@ -12,8 +12,14 @@ Two things this design fixes relative to the asymmetric-family sweep.
    therefore does not bring its own test closer, which is the confound that
    made the asymmetric sweep's falling loss uninterpretable.
 
-The headline quantity is error relative to the BINNING FLOOR. The floor is the
-RMS error that bin quantisation alone forces, so it is an absolute reference:
+The headline quantity is error relative to the IDEAL BINNED PREDICTOR. The
+model sees only the bin of x_n, so the best it can do is the bin-conditional
+mean m*(j) = E[f(x) | x in bin j]; measured against f(bin centre), that ideal
+predictor scores RMS(m* - f(centre)), which is the reference used here (see
+src/binfloor.py). An earlier version normalised by the RMS spread of f across a
+bin, which also contains the within-bin variance and is therefore too large --
+good models scored 0.68 against it, i.e. "better than optimal", which is what
+exposed the error. The reference is absolute:
 a model that clamps to the edge of its training band cannot reach it on a
 held-out task, while genuine in-context identification can. That sidesteps the
 "is it closer to the truth or to the band edge" question entirely, which is
@@ -37,6 +43,7 @@ import argparse
 import json
 from collections import defaultdict
 from pathlib import Path
+import sys
 
 import matplotlib
 matplotlib.use("Agg")
@@ -44,6 +51,19 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 R_TRIVIAL = 0.25          # below this the map is subcritical; orbits die
+_REF_CACHE = {}
+
+
+def ideal_ref(p_grid, R_grid, n_bins, family):
+    """RMS(m* - f(centre)) per cell; computed once and reused across runs."""
+    key = (len(p_grid), float(p_grid[0]), float(p_grid[-1]),
+           len(R_grid), float(R_grid[0]), float(R_grid[-1]), n_bins, family)
+    if key not in _REF_CACHE:
+        sys.path.insert(0, ".")
+        from src.binfloor import ideal_bin_reference
+        print("computing the ideal-binned-predictor reference ...", flush=True)
+        _REF_CACHE[key] = ideal_bin_reference(p_grid, R_grid, n_bins, family)
+    return _REF_CACHE[key]
 
 
 def load(root):
@@ -52,7 +72,11 @@ def load(root):
         z = np.load(p)
         keep = z["R_grid"] >= R_TRIVIAL
         ib, hm = z["in_band_alpha"], z["heldout_mask"]
-        ratio = z["implied_rms"] / z["binning_floor"]
+        fam = str(z["family"]) if "family" in z.files else "asym"
+        ref = ideal_ref(z["alpha_grid"], z["R_grid"],
+                        int(json.load(open(p.parent / "params.json"))["n_bins"]),
+                        fam)
+        ratio = z["implied_rms"] / np.maximum(ref, 1e-12)
         runs[float(z["band_width"])].append({
             "seed": int(json.load(open(p.parent / "params.json"))["seed"]),
             "band_lo": float(z["band_lo"]), "band_hi": float(z["band_hi"]),
@@ -106,10 +130,10 @@ def main():
     ax.errorbar(cov, r_in, yerr=r_in_sd, fmt="-s", color="#1B2A4A", lw=1.8,
                 ms=5, capsize=3, mfc="white", label="in band")
     ax.axhline(1.0, color="#2E7D32", ls="--", lw=1.8)
-    ax.text(cov[0], 1.06, "binning floor — optimal", fontsize=8, color="#2E7D32")
+    ax.text(cov[0], 1.06, "ideal binned predictor = 1.0", fontsize=8, color="#2E7D32")
     ax.set_yscale("log")
     ax.set_xlabel(r"Training-band coverage of $s\in[-1.2,1.2]$ (%)")
-    ax.set_ylabel("Implied-map RMS / binning floor")
+    ax.set_ylabel("Implied-map RMS / ideal binned predictor")
     ax.set_title("Does identification reach the floor off-band?\n"
                  "clamping to the band edge cannot", fontsize=10.5)
     ax.grid(alpha=0.25, which="both", lw=0.4)
@@ -139,7 +163,7 @@ def main():
     ax.axhline(1.0, color="#2E7D32", ls="--", lw=1.6)
     ax.set_yscale("log")
     ax.set_xlabel("$s$   ($s=0$ is the logistic map)")
-    ax.set_ylabel("Implied-map RMS / binning floor")
+    ax.set_ylabel("Implied-map RMS / ideal binned predictor")
     ax.set_title("Identification quality across the whole family\n"
                  "(seed 0; flat at 1.0 would be full generalization)",
                  fontsize=10.5)
@@ -176,7 +200,7 @@ def main():
     ax.axhline(1.0, color="#2E7D32", ls="--", lw=1.6)
     ax.set_yscale("log")
     ax.set_xlabel("$s$")
-    ax.set_ylabel("Implied-map RMS / binning floor")
+    ax.set_ylabel("Implied-map RMS / ideal binned predictor")
     ax.set_title("Position-swept: identification quality at every $s$\n"
                  "(1.0 = optimal for a binned model)", fontsize=10.5)
     ax.grid(alpha=0.25, which="both", lw=0.4)
@@ -202,7 +226,7 @@ def main():
     ax.axhline(1.0, color="#2E7D32", ls="--", lw=1.6)
     ax.set_yscale("log")
     ax.set_xlabel(r"Training-band coverage (%)")
-    ax.set_ylabel("Implied-map RMS / binning floor")
+    ax.set_ylabel("Implied-map RMS / ideal binned predictor")
     ax.set_title("Fixed position vs fixed distance\n"
                  "curves ending early = that $s$ fell inside the band",
                  fontsize=10.5)
