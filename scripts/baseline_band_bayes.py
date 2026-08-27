@@ -7,32 +7,29 @@ best predictor that knows only the pretraining task distribution. The
 transformer beating it is the evidence that out-of-distribution generalization
 is happening even below the transition.
 
-Three references are computed here, all model-free, all on the same held-out
-tasks the transformer is scored on:
+Three families of reference, all model-free, all scored on the same held-out
+tasks, each at Markov orders k = 1..4:
 
-  band_bayes    Bayes over an order-1 (Markov) model class restricted to the
-                TRAINING BAND. It infers which map it is looking at from the
-                context, but its prior lives entirely inside alpha in [1-w, 1],
-                so on a held-out alpha it must explain the data with a map it
-                wrongly believes is in-band. This is the analogue of the paper's
-                dashed "Optimal Bayes*" line, and the one to beat.
-  context_only  order-1 transition matrix estimated from the context window
-                itself (49 transitions), smoothed. No prior over tasks at all —
-                what pure in-context Markov estimation buys you.
-  oracle        order-1 transition matrix of the TRUE map. Best achievable
-                within the Markov-1 class; a floor, not a competitor.
+  band_bayes    Bayes over order-k Markov models restricted to the TRAINING
+                BAND. It infers which map it is looking at from the context,
+                but its prior lives entirely inside alpha in [1-w, 1], so on a
+                held-out alpha it must explain the data with a map it wrongly
+                believes is in-band. Analogue of the paper's "Optimal Bayes*".
+  context_only  order-k model estimated from the context window itself. No task
+                prior at all. Degrades with k as the k-grams in 50 tokens go
+                unique — the sparsity cost of memory without a prior.
+  oracle        order-k model of the TRUE map, fit on a long orbit. Best
+                achievable in the class; a floor, not a competitor.
 
-Order-1 is a good model class here: the maps are deterministic, so the only
-uncertainty in the next bin comes from within-bin spread, and the transition
-matrices are near-deterministic curves. The transformer can beat this class
-only by using longer history to pin the parameters down more sharply, which is
-exactly the ability under test.
+Why orders 1-4 are cheap despite 64^4 = 1.7e7 possible 4-grams: the maps are
+deterministic and one-dimensional, so a long orbit visits only ~944 distinct
+4-grams. Models are stored as sorted integer keys plus count rows and queried
+with searchsorted, which keeps the whole sweep to a few minutes.
 
-Smoothing is tuned per predictor to minimize its own loss, so each reference is
-given its best shot rather than being handicapped.
+Candidates are fitted ONCE over a global grid spanning the widest band and then
+subset per band width, so widening the band costs nothing extra.
 """
 import argparse
-import json
 from pathlib import Path
 
 import numpy as np
@@ -40,18 +37,51 @@ import numpy as np
 from src.maps import iterate_asym, tokenize_trajectory
 
 
-def transition_matrix(R, alpha, n_bins, n_steps=120_000, burn_in=2_000, seed=5):
+def encode(tok, k):
+    """Base-n_bins encoding of every length-k window, plus the following token."""
+    n = len(tok) - k
+    key = np.zeros(n, dtype=np.int64)
+    for i in range(k):
+        key = key * 64 + tok[i:i + n]
+    return key, tok[k:k + n]
+
+
+class SparseKGram:
+    """Order-k counts held as sorted keys + rows, for fast batched lookup."""
+
+    def __init__(self, tok, k, n_bins=64):
+        self.k, self.B = k, n_bins
+        key, nxt = encode(tok, k)
+        order = np.argsort(key, kind="stable")
+        key, nxt = key[order], nxt[order]
+        self.keys, start = np.unique(key, return_index=True)
+        self.rows = np.zeros((len(self.keys), n_bins), dtype=np.float32)
+        idx = np.searchsorted(self.keys, key)
+        np.add.at(self.rows, (idx, nxt), 1.0)
+        # Laplace on the unigram: it is the backoff of last resort, and a
+        # 50-token context visits only a fraction of the 64 bins, so an
+        # unsmoothed unigram would assign the rest probability zero and send
+        # the held-out cross-entropy to infinity.
+        u = np.bincount(tok, minlength=n_bins).astype(np.float64) + 1.0
+        self.unigram = u / u.sum()
+
+    def logp(self, query_keys, eps):
+        """(m, B) log-probabilities; unseen contexts back off to the unigram."""
+        i = np.searchsorted(self.keys, query_keys)
+        i_clipped = np.clip(i, 0, len(self.keys) - 1)
+        hit = self.keys[i_clipped] == query_keys
+        rows = np.where(hit[:, None], self.rows[i_clipped], 0.0)
+        p = rows + eps * self.B * self.unigram[None, :]
+        return np.log(p / p.sum(axis=1, keepdims=True))
+
+    def prob(self, query_keys, eps):
+        return np.exp(self.logp(query_keys, eps))
+
+
+def orbit_tokens(R, alpha, n_bins, n_steps, burn_in=2000, seed=5):
     x = np.random.default_rng(seed).uniform(0.2, 0.8)
-    traj = iterate_asym(x, R, alpha, burn_in + n_steps)[burn_in:]
-    t = tokenize_trajectory(traj, n_bins)
-    C = np.bincount(t[:-1] * n_bins + t[1:],
-                    minlength=n_bins * n_bins).astype(float)
-    return C.reshape(n_bins, n_bins)
-
-
-def normalize(counts, eps):
-    P = counts + eps
-    return P / P.sum(axis=1, keepdims=True)
+    return tokenize_trajectory(
+        iterate_asym(x, R, alpha, burn_in + n_steps)[burn_in:], n_bins)
 
 
 def make_contexts(R, alpha, n_bins, context_len, n_traj, traj_len, seed):
@@ -66,33 +96,23 @@ def make_contexts(R, alpha, n_bins, context_len, n_traj, traj_len, seed):
     return np.asarray(ctx), np.asarray(tgt)
 
 
-def ce_from_probs(p_next, targets):
-    """Mean cross-entropy in nats."""
-    return float(-np.mean(np.log(np.maximum(
-        p_next[np.arange(len(targets)), targets], 1e-300))))
-
-
-def band_bayes_ce(ctx, tgt, cand_logT, cand_T, chunk=4000):
-    """Posterior over candidate maps from context transitions, then mix."""
-    n_cand = len(cand_T)
-    out = np.empty(len(ctx))
-    for s in range(0, len(ctx), chunk):
-        c = ctx[s:s + chunk]
-        # log-likelihood of each context under each candidate's order-1 model
-        ll = cand_logT[:, c[:, :-1], c[:, 1:]].sum(axis=2)      # (n_cand, m)
-        ll -= ll.max(axis=0, keepdims=True)
-        wgt = np.exp(ll)
-        wgt /= wgt.sum(axis=0, keepdims=True)
-        # predictive: sum_c w_c * T_c[last_token, :]
-        rows = cand_T[:, c[:, -1], :]                            # (n_cand,m,B)
-        p = np.einsum("cm,cmb->mb", wgt, rows)
-        out[s:s + chunk] = -np.log(np.maximum(
-            p[np.arange(len(c)), tgt[s:s + chunk]], 1e-300))
-    return float(out.mean())
+def context_keys(ctx, k):
+    """Keys of every in-context k-gram, and of the final predictive k-gram."""
+    m, L = ctx.shape
+    n = L - k
+    hist = np.zeros((m, n), dtype=np.int64)
+    for i in range(k):
+        hist = hist * 64 + ctx[:, i:i + n]
+    nxt = ctx[:, k:k + n]
+    query = np.zeros(m, dtype=np.int64)
+    for i in range(k):
+        query = query * 64 + ctx[:, L - k + i]
+    return hist, nxt, query
 
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--orders", type=int, nargs="+", default=[1, 2, 3, 4])
     ap.add_argument("--band_widths", type=float, nargs="+",
                     default=[0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4,
                              0.45, 0.5, 0.55, 0.6, 0.65, 0.7])
@@ -100,88 +120,123 @@ def main():
                     default=[0.20, 0.22, 0.24, 0.26, 0.28, 0.30])
     ap.add_argument("--R_eval", type=float, nargs="+",
                     default=[0.35, 0.5, 0.65, 0.8, 0.9, 1.0])
-    ap.add_argument("--n_cand_alpha", type=int, default=17)
-    ap.add_argument("--n_cand_R", type=int, default=17)
+    ap.add_argument("--cand_alpha_step", type=float, default=0.0125)
+    ap.add_argument("--n_cand_R", type=int, default=15)
+    ap.add_argument("--cand_steps", type=int, default=60_000)
     ap.add_argument("--n_bins", type=int, default=64)
     ap.add_argument("--context_len", type=int, default=50)
     ap.add_argument("--traj_len", type=int, default=150)
     ap.add_argument("--n_traj", type=int, default=6)
+    ap.add_argument("--eps_grid", type=float, nargs="+",
+                    default=[1e-3, 3e-3, 1e-2, 3e-2, 1e-1, 3e-1],
+                    help="smoothing is tuned over this grid so each reference "
+                         "is given its best shot rather than being handicapped")
     ap.add_argument("--out", default="figures_asym2/band_bayes_baseline.npz")
     a = ap.parse_args()
-
     B = a.n_bins
-    eps_grid = np.array([3e-4, 1e-3, 3e-3, 1e-2, 3e-2, 1e-1])
 
     # ---- held-out evaluation contexts, shared by every predictor ----------
-    print(f"building held-out contexts: alpha in {a.heldout_alphas}, "
-          f"R in {a.R_eval}")
     cells = []
     for al in a.heldout_alphas:
         for R in a.R_eval:
             ctx, tgt = make_contexts(R, al, B, a.context_len, a.n_traj,
                                      a.traj_len, seed=int(1000 * al + R * 7))
-            cells.append({"alpha": al, "R": R, "ctx": ctx, "tgt": tgt,
-                          "counts": transition_matrix(R, al, B)})
+            cells.append({"alpha": al, "R": R, "ctx": ctx, "tgt": tgt})
     n_ctx = sum(len(c["ctx"]) for c in cells)
-    print(f"  {len(cells)} cells, {n_ctx} contexts total")
+    print(f"held-out: {len(cells)} cells, {n_ctx} contexts "
+          f"(alpha {a.heldout_alphas[0]}-{a.heldout_alphas[-1]})")
 
-    # ---- oracle and context-only, independent of band width --------------
-    def oracle_ce(eps):
-        return float(np.mean([
-            ce_from_probs(normalize(c["counts"], eps)[c["ctx"][:, -1]], c["tgt"])
-            for c in cells]))
-    eps_o = eps_grid[np.argmin([oracle_ce(e) for e in eps_grid])]
-    oracle = oracle_ce(eps_o)
+    # ---- global candidate pool, fitted once ------------------------------
+    lo = 1.0 - max(a.band_widths)
+    cand_alpha = np.arange(lo, 1.0 + 1e-9, a.cand_alpha_step)
+    cand_R = np.linspace(0.125, 1.0, a.n_cand_R)
+    pool = [(R, al) for al in cand_alpha for R in cand_R]
+    print(f"fitting {len(pool)} candidates on alpha in [{lo:.2f}, 1.0] "
+          f"x {a.n_cand_R} R values, {a.cand_steps} steps each ...", flush=True)
+    cand_tok = [orbit_tokens(R, al, B, a.cand_steps) for R, al in pool]
+    cand_a = np.array([al for _, al in pool])
 
-    def context_only_ce(eps):
-        tot = []
-        for c in cells:
-            ctx, tgt = c["ctx"], c["tgt"]
-            idx = ctx[:, :-1] * B + ctx[:, 1:]
-            ce = np.empty(len(ctx))
-            for i in range(len(ctx)):
-                C = np.bincount(idx[i], minlength=B * B).reshape(B, B)
-                P = normalize(C, eps)
-                ce[i] = -np.log(max(P[ctx[i, -1], tgt[i]], 1e-300))
-            tot.append(ce.mean())
-        return float(np.mean(tot))
-    eps_c = eps_grid[np.argmin([context_only_ce(e) for e in eps_grid])]
-    context_only = context_only_ce(eps_c)
+    results = {}
+    for k in a.orders:
+        print(f"\n--- order {k} ---", flush=True)
+        cand_models = [SparseKGram(t, k, B) for t in cand_tok]
 
-    print(f"  oracle Markov-1   CE = {oracle:.4f}  (eps={eps_o:g})")
-    print(f"  context-only      CE = {context_only:.4f}  (eps={eps_c:g})")
+        # oracle: fit the true map of each held-out cell
+        true_models = [SparseKGram(
+            orbit_tokens(c["R"], c["alpha"], B, a.cand_steps), k, B)
+            for c in cells]
 
-    # ---- band-restricted Bayes, one value per band width -----------------
-    print("\n%7s %10s %14s" % ("w", "band", "band_bayes CE"))
-    results, tuned = [], {}
-    for w in a.band_widths:
-        alphas = np.linspace(1.0 - w, 1.0, a.n_cand_alpha) if w > 0 else np.array([1.0])
-        Rs = np.linspace(0.125, 1.0, a.n_cand_R)
-        counts = np.stack([transition_matrix(R, al, B)
-                           for al in alphas for R in Rs])
-        # Tune the smoothing once (on the first band) and reuse it: the
-        # optimum is a property of the model class and the held-out data, not
-        # of the band, and re-tuning per band costs a factor of len(eps_grid).
-        nonlocal_eps = tuned.get("eps")
-        trial = eps_grid if nonlocal_eps is None else [nonlocal_eps]
-        best, best_eps = np.inf, None
-        for eps in trial:
-            T = normalize(counts, eps)
-            ce = float(np.mean([band_bayes_ce(c["ctx"], c["tgt"], np.log(T), T)
-                                for c in cells]))
-            if ce < best:
-                best, best_eps = ce, eps
-        tuned.setdefault("eps", best_eps)
-        results.append(best)
-        print("%7g %10s %14.4f   (eps=%g)"
-              % (w, f"[{1-w:.2f},1]", best, best_eps))
+        def oracle_at(e):
+            out = []
+            for c, m in zip(cells, true_models):
+                _, _, q = context_keys(c["ctx"], k)
+                p = m.prob(q, e)
+                out.append(-np.log(np.maximum(
+                    p[np.arange(len(c["tgt"])), c["tgt"]], 1e-300)).mean())
+            return float(np.mean(out))
+        oracle = min(oracle_at(e) for e in a.eps_grid)
+
+        # context-only: fit on the context window itself
+        ctx_models = [[SparseKGram(c["ctx"][i], k, B)
+                       for i in range(len(c["ctx"]))] for c in cells]
+
+        def context_at(e):
+            out = []
+            for c, models in zip(cells, ctx_models):
+                ctx, tgt = c["ctx"], c["tgt"]
+                ce = np.empty(len(ctx))
+                for i, m in enumerate(models):
+                    _, _, q = context_keys(ctx[i][None, :], k)
+                    ce[i] = -np.log(max(m.prob(q, e)[0, tgt[i]], 1e-300))
+                out.append(ce.mean())
+            return float(np.mean(out))
+        context_only = min(context_at(e) for e in a.eps_grid)
+        print(f"  oracle       {oracle:.4f}")
+        print(f"  context-only {context_only:.4f}")
+
+        # band-restricted Bayes, one value per band width
+        per_w, tuned_eps = [], None
+        for w in a.band_widths:
+            sel = np.where(cand_a >= 1.0 - w - 1e-9)[0]
+            trial = a.eps_grid if tuned_eps is None else [tuned_eps]
+            best = (np.inf, None)
+            for eps in trial:
+              ce_cells = []
+              for c in cells:
+                hist, nxt, query = context_keys(c["ctx"], k)
+                m_ctx = len(c["ctx"])
+                ll = np.empty((len(sel), m_ctx))
+                pred = np.empty((len(sel), m_ctx, B), dtype=np.float32)
+                for j, ci in enumerate(sel):
+                    mdl = cand_models[ci]
+                    lp = mdl.logp(hist.ravel(), eps).reshape(m_ctx, -1, B)
+                    ll[j] = np.take_along_axis(
+                        lp, nxt[:, :, None], axis=2)[:, :, 0].sum(axis=1)
+                    pred[j] = mdl.prob(query, eps)
+                ll -= ll.max(axis=0, keepdims=True)
+                wgt = np.exp(ll); wgt /= wgt.sum(axis=0, keepdims=True)
+                p = np.einsum("jm,jmb->mb", wgt, pred)
+                ce_cells.append(-np.log(np.maximum(
+                    p[np.arange(m_ctx), c["tgt"]], 1e-300)).mean())
+              val = float(np.mean(ce_cells))
+              if val < best[0]:
+                  best = (val, eps)
+            tuned_eps = tuned_eps or best[1]
+            per_w.append(best[0])
+            print(f"  w={w:<5g} band=[{1-w:.2f},1] n_cand={len(sel):<4d} "
+                  f"band_bayes {best[0]:.4f}  (eps={best[1]:g})", flush=True)
+        results[k] = {"band_bayes": np.array(per_w), "oracle": oracle,
+                      "context_only": context_only}
 
     Path(a.out).parent.mkdir(parents=True, exist_ok=True)
     np.savez(a.out, band_widths=np.array(a.band_widths),
-             band_bayes=np.array(results), oracle=oracle,
-             context_only=context_only,
+             orders=np.array(a.orders),
+             band_bayes=np.stack([results[k]["band_bayes"] for k in a.orders]),
+             oracle=np.array([results[k]["oracle"] for k in a.orders]),
+             context_only=np.array([results[k]["context_only"]
+                                    for k in a.orders]),
              heldout_alphas=np.array(a.heldout_alphas),
-             R_eval=np.array(a.R_eval))
+             R_eval=np.array(a.R_eval), eps=eps)
     print(f"\nwrote {a.out}")
 
 
