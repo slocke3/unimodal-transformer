@@ -16,7 +16,7 @@
 
 set -eo pipefail
 cd "${SLURM_SUBMIT_DIR}"
-mkdir -p logs figures_asym
+mkdir -p logs "${OUT_DIR:-figures_asym}"
 
 module purge
 module load anaconda3/2022.5
@@ -25,20 +25,27 @@ conda activate torch2
 export PYTHONUNBUFFERED=1
 export PYTHONPATH="${SLURM_SUBMIT_DIR}:${PYTHONPATH:-}"
 
+# Which sweep to analyse; override with RUNS_DIR/OUT_DIR/N_EXPECTED at submit.
+RUNS_DIR="${RUNS_DIR:-runs_asym}"
+OUT_DIR="${OUT_DIR:-figures_asym}"
+N_EXPECTED="${N_EXPECTED:-10}"
+echo "analysing ${RUNS_DIR} -> ${OUT_DIR}"
+
 echo "=== completion audit ==="
 found=0
-for d in runs_asym/*/; do
+for d in "${RUNS_DIR}"/*/; do
     [ -d "$d" ] || continue
     if [ -f "${d}eval_asym.npz" ]; then found=$((found + 1));
     else echo "  INCOMPLETE: $d"; fi
 done
-echo "  ${found}/10 runs produced an eval file"
+echo "  ${found}/${N_EXPECTED} runs produced an eval file"
 
 echo
 echo "=== convergence check ==="
 python - <<'PY'
 import json, glob, os
-for d in sorted(glob.glob("runs_asym/*/history.json")):
+import os as _os
+for d in sorted(glob.glob(_os.environ.get("RUNS_DIR", "runs_asym") + "/*/history.json")):
     h = json.load(open(d))
     v = h.get("val_losses") or []
     if len(v) < 10:
@@ -51,5 +58,6 @@ PY
 
 echo
 echo "=== figures ==="
-python scripts/plot_asym_bands.py --runs_dir runs_asym --out_dir figures_asym
+python scripts/plot_asym_bands.py --runs_dir "${RUNS_DIR}" --out_dir "${OUT_DIR}"
+python scripts/analyze_conjugacy_curve.py --runs_dir "${RUNS_DIR}" --out_dir "${OUT_DIR}"
 echo "DONE"

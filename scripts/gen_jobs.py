@@ -79,8 +79,11 @@ def main():
                              0.3, 0.4],
                     help="asymband mode: half-widths w, training on "
                          "alpha ~ U[1-w, 1]. w=0 is the logistic-only zero-shot "
-                         "arm. Capped at 0.5 so alpha stays <= 1: above alpha=1 "
-                         "the origin becomes superattracting and orbits die.")
+                         "arm. Capped at 0.8 so alpha stays in [0.2, 1.0].")
+    ap.add_argument("--alpha_eval_lo", type=float, default=0.5,
+                    help="asymband mode: lowest alpha in the evaluation grid")
+    ap.add_argument("--n_alpha_eval", type=int, default=26,
+                    help="asymband mode: alpha grid points")
     ap.add_argument("--n_tasks", type=int, default=8000,
                     help="asymband mode: distinct (R, alpha) training pairs")
     ap.add_argument("--ms_diversity", type=int, nargs="+",
@@ -179,8 +182,10 @@ def main():
         # These lines drive scripts/train_asym_band.py, so submit with
         # TRAIN_SCRIPT=scripts/train_asym_band.py.
         for w in a.band_widths:
-            if not 0.0 <= w <= 0.5:
-                raise ValueError(f"band width {w} outside [0, 0.5]")
+            # 0.8 keeps alpha >= 0.2: above 1 the origin is superattracting,
+            # below ~0.15 orbit collapse reappears.
+            if not 0.0 <= w <= 0.8:
+                raise ValueError(f"band width {w} outside [0, 0.8]")
             for seed in a.seeds:
                 name = f"asym_w{w:g}_seed{seed}"
                 lines.append(
@@ -189,6 +194,8 @@ def main():
                     f"--context_len {a.context_len} --n_bins {a.n_bins} "
                     f"--max_steps {a.max_steps} --log_points {a.log_points} "
                     f"--max_val_traj {a.max_val_traj} "
+                    f"--alpha_eval_lo {a.alpha_eval_lo} "
+                    f"--n_alpha_eval {a.n_alpha_eval} "
                     f"--seed {seed} --out_dir {a.out_base}/{name}")
     elif a.mode == "diversity":
         # Total data fixed; only the number of distinct tasks changes. Every run

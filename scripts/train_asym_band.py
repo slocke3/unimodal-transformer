@@ -81,9 +81,12 @@ def main():
     os.makedirs(args.out_dir, exist_ok=True)
     t0 = time.time()
 
-    if args.band_width < 0 or args.band_width > 0.5:
-        raise ValueError("band_width must be in [0, 0.5] to keep alpha in "
-                         "[0.5, 1] (alpha > 1 makes the origin superattracting)")
+    # Upper limit 0.8 keeps alpha >= 0.2. Above alpha=1 the origin is
+    # superattracting and orbits die; below ~0.15 collapse starts reappearing,
+    # so [0.2, 1.0] is the usable span.
+    if args.band_width < 0 or args.band_width > 0.8:
+        raise ValueError("band_width must be in [0, 0.8] to keep alpha in "
+                         "[0.2, 1.0]")
 
     # -- draw the training tasks --------------------------------------------
     rng = np.random.default_rng(args.seed)

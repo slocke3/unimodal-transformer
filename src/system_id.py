@@ -183,3 +183,42 @@ def plot_deviation_and_bias(result, save_path=None, figsize=(11, 4.2)):
     if save_path:
         plt.savefig(save_path, dpi=150, bbox_inches="tight")
     return fig
+
+
+# ---------------------------------------------------------------------------
+# Asymmetric family: does the model identify the map, or apply a memorized one?
+# ---------------------------------------------------------------------------
+
+def implied_return_map_asym(model, device, R, alpha, n_bins, context_len,
+                            n_traj=40, traj_len=200, burn_in=50, seed=7):
+    """Model's implied E[x_{n+1} | x_n] on contexts drawn from g_(R,alpha).
+
+    Same construction as implied_return_map, but the contexts come from the
+    asymmetric family. model=None returns the true map, for reference.
+    """
+    from .maps import iterate_asym, asym_map
+
+    rng = np.random.default_rng(seed)
+    contexts, last_x = [], []
+    for _ in range(n_traj):
+        x0 = rng.uniform(0.05, 0.95)
+        traj = iterate_asym(x0, R, alpha, burn_in + traj_len)[burn_in:]
+        tok = tokenize_trajectory(traj, n_bins)
+        for t in range(context_len, len(tok)):
+            contexts.append(tok[t - context_len:t])
+            last_x.append(detokenize(tok[t - 1], n_bins))
+    contexts = np.asarray(contexts)
+    last_x = np.asarray(last_x, dtype=float)
+    if model is None:
+        e_next = np.array([asym_map(x, R, alpha) for x in last_x])
+    else:
+        centers = (np.arange(n_bins) + 0.5) / n_bins
+        e_next = _model_next_dist(model, contexts, device) @ centers
+    return last_x, e_next
+
+
+def rms_to_map(last_x, e_next, R, alpha):
+    """RMS distance from an implied return map to the true g_(R,alpha)."""
+    from .maps import asym_map
+    truth = np.array([asym_map(float(x), R, alpha) for x in np.asarray(last_x)])
+    return float(np.sqrt(np.mean((np.asarray(e_next) - truth) ** 2)))
