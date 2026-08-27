@@ -19,8 +19,15 @@ conda activate torch2
 export PYTHONUNBUFFERED=1
 export PYTHONPATH="${SLURM_SUBMIT_DIR}:${PYTHONPATH:-}"
 
+# Configurable at submit time via --export.
+PROBE_RUNS="${PROBE_RUNS:-runs_asym/asym_w0_seed0 runs_asym/asym_w0.4_seed0}"
+PROBE_ALPHAS="${PROBE_ALPHAS:-1.0 0.9 0.8 0.7 0.6 0.5}"
+PROBE_OUT="${PROBE_OUT:-figures_asym}"
+echo "probing: ${PROBE_RUNS}"
+mkdir -p "${PROBE_OUT}"
+
 python scripts/probe_return_map.py \
-    --runs runs_asym/asym_w0_seed0 runs_asym/asym_w0.4_seed0 \
-    --R 1.0 --alphas 1.0 0.9 0.8 0.7 0.6 0.5 \
-    --out_dir figures_asym
+    --runs ${PROBE_RUNS} \
+    --R 1.0 --alphas ${PROBE_ALPHAS} \
+    --out_dir "${PROBE_OUT}"
 echo "DONE"
