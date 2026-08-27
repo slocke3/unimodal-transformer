@@ -15,7 +15,8 @@ families does not fix it: a new family changes dynamics *and* density together.
 What is needed is an intervention that moves one factor while pinning the other.
 
 Three such controls are described below. The first is implemented; the second
-and third are not yet built.
+and third are not yet built. Section 5 argues that the second and third are
+diagnostics rather than fixes, and that the fix is an augmentation.
 
 ## Notation
 
@@ -123,12 +124,35 @@ reports as a single number.
 `src/graded_transfer.py`. The new piece is estimating `F_alpha` by histogramming
 a long orbit and inverting it.
 
-**Caveat.** This matches the one-point density, not the transition structure —
-and section 1 shows those diverge sharply here. So `B - C` captures only the
-marginal part of the representation effect, and some of the rest leaks into
-`A - B`. Matching the order-1 joint instead would be stronger but is harder,
-since no scalar coordinate change can generally align a two-dimensional
-transition distribution.
+**Measured, and it does not work.** Warping logistic `r=4` orbits by the
+density-matching map and comparing the result's transition distribution against
+the real `g_alpha` at `R=1` moves the overlap from 0.075 only to 0.110 — the
+surrogate does *not* reproduce the target's dynamics.
+
+The reason is worth stating, because it invalidates the naive version of this
+control. The conjugacy to the tent map pushes forward the **measure of maximal
+entropy**, not the physical (SRB) measure. Those coincide for logistic `r=4` —
+which is precisely why `lambda = ln 2` there — but nowhere else on the curve:
+`lambda_SRB` is 0.689 at `alpha=0.9` and 0.622 at `alpha=0.5`, all against
+`h_top = ln 2`. So the CDF of the invariant density is *not* the conjugacy, and
+matching densities leaves the dynamics unmatched.
+
+**Use the topological conjugacy instead.** Build `h` from the itinerary: take
+the Gray-coded binary expansion of the symbol sequence relative to the critical
+point, which is the standard conjugacy to the full tent map. It satisfies
+`h(x_c) = 0.5` exactly for every `alpha` (verified numerically), as any
+conjugacy must, and it works:
+
+| alpha | raw transition overlap | after conjugacy warp |
+|-------|------------------------|----------------------|
+| 0.9   | 0.220                  | **0.922**            |
+| 0.7   | 0.106                  | **0.767**            |
+| 0.5   | 0.076                  | **0.616**            |
+
+The residual shortfall from 1.0 is finite grid, finite expansion depth and
+float precision in chaotic orbits, not a failure of the construction. The
+practical consequence: `B` must be produced with the itinerary conjugacy, and
+the surrogate then really does hold the dynamics fixed.
 
 ## 4. The full 2x2, if a definitive answer is wanted
 
@@ -145,3 +169,49 @@ The bottom-left cell is the one that never arises by accident: conjugate the
 its kneading stays its own. Only with all four cells does "switching families
 for train/test" become an identifying design rather than another confounded
 comparison.
+
+## 5. Why the diagnostics are not fixes, and what the fix would be
+
+Sections 2 and 3 both hand the model information about the test map — the peak
+position `x_c` in one case, the target measure in the other. They can answer
+"would it generalize if the representation were aligned?" but never "can it
+learn to align the representation itself?" For that the model has to be *taught
+an invariance*, and the honest way to choose one is to pick a nuisance
+transformation you would assert anyway, not one reverse-engineered from the
+shift you are trying to beat.
+
+The defensible assertion here is that **the coordinate on the interval is
+arbitrary**. Nothing in the dynamics privileges uniform `x`; the uniform
+partition is a modelling convenience. Any monotone reparameterization `h` turns
+orbits of `f` into orbits of `h . f . h^-1`, which has identical symbolic
+dynamics and an arbitrarily different appearance under a fixed grid.
+
+The measurement in section 3 shows this is not merely a nice principle: the
+`alpha` family at `R = 1` *is* reachable from logistic by such a warp (overlap
+0.076 -> 0.616 under the itinerary conjugacy). So a model trained with random
+monotone recoordinatizations is being trained on a distribution that already
+contains the asymmetric family, without anyone having looked at it. That is the
+difference between an augmentation and a patch.
+
+Candidate augmentations, most to least principled:
+
+1. **Random monotone warps.** Draw `h` per sequence from a generic family of
+   monotone maps fixing 0 and 1 (Beta CDFs, random-knot monotone splines) and
+   tokenize `h(x)`. `src/graded_transfer.py` already sweeps a one-parameter
+   version of exactly this (`h_eps`); the augmentation randomizes it.
+2. **Multi-family training.** Train on the existing `FAMILIES` registry (tent,
+   sine, cubic) rather than logistic alone. Motivated by "we want a model of
+   unimodal dynamics, not of one map", and requires no knowledge of `g_alpha`.
+3. **Reflection.** Train on `1 - x` as well as `x`. Legitimate: if `x_n` is an
+   orbit of `f` then `1 - x_n` is an orbit of `sigma . f . sigma`, a genuine
+   conjugate. Cheap, and motivated by "left and right are arbitrary labels".
+4. **Grid dither and time subsampling.** Random sub-bin offsets of the
+   partition, and training on `f^k` for random small `k`. Motivated by "the
+   discretization origin and the sampling rate are arbitrary".
+
+Expected costs, worth stating before running: in-band loss should *rise*,
+because the model can no longer memorize one token-transition table and must
+infer the coordinate from context. That also makes context length a binding
+constraint — this becomes the in-context system-identification problem that
+`src/system_id.py` already studies, so the natural companion measurement is
+performance against context length `L`.
