@@ -118,8 +118,10 @@ def main():
           f"on this curve")
 
     # -- how much of the out-of-band loss is representation? -----------------
-    print("\n%7s %11s %12s %12s %10s" % ("w", "OOB total", "OOB @R=1",
-                                         "in-band @R=1", "repr share"))
+    print("\n%7s %11s %12s %12s %10s %10s"
+          % ("w", "OOB plane", "OOB @R=1", "in-band @R=1", "excess", "ratio"))
+    print("  (the last two columns are PURE representation: every map on the "
+          "R=1\n   curve shares the logistic r=4 kneading sequence)")
     rows = []
     for run in runs:
         ib = run["in_band"]
@@ -133,13 +135,21 @@ def main():
         excess_curve = oob_curve - inb_curve
         inb_total = run["ce"][ib][:, keep_R].mean() if ib.any() else np.nan
         excess_total = oob_total - inb_total
-        share = (excess_curve / excess_total
-                 if np.isfinite(excess_total) and excess_total > 0 else np.nan)
+        # NOTE: do not divide these two. The R=1 slice is the hardest part of
+        # the plane (fully chaotic, maximal entropy) while the plane average is
+        # dominated by periodic windows that are near-trivially predictable, so
+        # a ratio of the two is not a "share" and routinely exceeds 1. The
+        # control is a magnitude result, not a decomposition: on the conjugacy
+        # slice the dynamics are fixed, so 100% of the in->out degradation
+        # measured THERE is representation, by construction.
         rows.append({"w": run["w"], "col": col, "ib": ib,
+                     "inb_curve": inb_curve, "oob_curve": oob_curve,
                      "excess_curve": excess_curve,
-                     "excess_total": excess_total, "share": share})
-        print("%7g %11.4f %12.4f %12.4f %9.1f%%"
-              % (run["w"], oob_total, oob_curve, inb_curve, 100 * share))
+                     "inb_total": inb_total, "oob_total": oob_total,
+                     "excess_total": excess_total})
+        print("%7g %11.4f %12.4f %12.4f %10.2f %9.2fx"
+              % (run["w"], oob_total, oob_curve, inb_curve, excess_curve,
+                 oob_curve / inb_curve if inb_curve > 0 else np.nan))
 
     # -- figure --------------------------------------------------------------
     fig, axes = plt.subplots(1, 3, figsize=(16.2, 4.6))
@@ -176,13 +186,24 @@ def main():
 
     ax = axes[2]
     ws = [r["w"] for r in rows]
-    ax.plot(ws, [100 * r["share"] for r in rows], "o-", color="#D85A30", lw=1.8)
-    ax.axhline(100, color="gray", ls=":", lw=1.0)
+    ax.plot(ws, [r["inb_curve"] for r in rows], "o-", color="#1B2A4A", lw=1.9,
+            label=r"in band, $R=1$")
+    ax.plot(ws, [r["oob_curve"] for r in rows], "o-", color="#D85A30", lw=1.9,
+            label=r"out of band, $R=1$  (pure representation)")
+    ax.plot(ws, [r["inb_total"] for r in rows], "s--", color="#1B2A4A", lw=1.2,
+            alpha=0.6, mfc="white", label="in band, whole plane")
+    ax.plot(ws, [r["oob_total"] for r in rows], "s--", color="#D85A30", lw=1.2,
+            alpha=0.6, mfc="white", label="out of band, whole plane")
+    ax.axhline(np.log(64), color="gray", ls=":", lw=1.1)
+    ax.text(ws[0], np.log(64) * 1.06, "uniform over 64 bins", fontsize=7,
+            color="gray")
+    ax.set_yscale("log")
     ax.set_xlabel(r"Training band half-width $w$")
-    ax.set_ylabel("Representation share of out-of-band excess (%)")
-    ax.set_title("How much of the out-of-band loss is the binning\n"
-                 "moving rather than a dynamical failure?", fontsize=10.5)
-    ax.grid(alpha=0.25, lw=0.4)
+    ax.set_ylabel("Mean cross-entropy (nats)")
+    ax.set_title("Representation cost alone exceeds the whole-plane\n"
+                 "out-of-band loss, and beats uniform guessing", fontsize=10.5)
+    ax.grid(alpha=0.25, which="both", lw=0.4)
+    ax.legend(fontsize=7)
 
     fig.suptitle("Representation-only control: the $R=1$ curve is a family of "
                  "topologically conjugate maps, so CE variation along it "
@@ -195,7 +216,10 @@ def main():
              lam=lam, density_overlap=ov, transition_overlap=ov_t,
              ce_curve=np.array([r["col"] for r in rows]),
              band_widths=np.array(ws),
-             repr_share=np.array([r["share"] for r in rows]))
+             inb_curve=np.array([r["inb_curve"] for r in rows]),
+             oob_curve=np.array([r["oob_curve"] for r in rows]),
+             inb_plane=np.array([r["inb_total"] for r in rows]),
+             oob_plane=np.array([r["oob_total"] for r in rows]))
     for ext in ("png", "pdf"):
         fig.savefig(out / f"conjugacy_curve.{ext}", dpi=160, bbox_inches="tight")
     print(f"\nwrote {out}/conjugacy_curve.png")
