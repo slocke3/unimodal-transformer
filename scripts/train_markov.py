@@ -18,6 +18,14 @@ The prediction being tested:
 A fresh conditional table is drawn for every sequence, so task diversity is
 infinite by construction and the model cannot memorise tasks.
 
+Training predicts at EVERY position, not just the last. The model already runs
+all L positions through every layer, so using one target per sequence wastes
+that compute by a factor of L; with L=512 that was the difference between an
+hour and a day. Predicting throughout also trains the model to use whatever
+context length it has, which is exactly the variable-depth routine under test.
+Evaluation still scores only the final position, so it stays comparable to the
+Bayes references.
+
 Everything is scored against EXACT references (Dirichlet-multinomial conjugacy):
 full Bayes over all admissible orders, and Bayes restricted to the training
 orders -- the latter being the concept-shift analogue of a mis-specified prior,
@@ -70,8 +78,15 @@ def main():
     p.add_argument("--lr", type=float, default=3e-4)
     p.add_argument("--weight_decay", type=float, default=1e-4)
     p.add_argument("--batch_size", type=int, default=64)
-    p.add_argument("--max_steps", type=int, default=40000)
+    p.add_argument("--max_steps", type=int, default=15000)
     p.add_argument("--log_every", type=int, default=2000)
+    p.add_argument("--pool_batches", type=int, default=128,
+                   help="sequences are generated in pools of this many batches. "
+                        "The generator loops over `length` timesteps in Python, "
+                        "so the per-step overhead is fixed; generating 128 "
+                        "batches at once amortises it ~128x. Each pool still "
+                        "draws a fresh table per sequence, so task diversity "
+                        "stays effectively infinite.")
     p.add_argument("--n_eval", type=int, default=300)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--out_dir", required=True)
@@ -105,13 +120,23 @@ def main():
     # ---- training: fresh tasks every batch --------------------------------
     model.train()
     hist = []
+    pool_size = a.pool_batches * a.batch_size
+    pool, pool_at = None, 0
     for step in range(1, a.max_steps + 1):
-        ks = rng.choice(a.train_orders, size=a.batch_size)
-        seq = generate_batch(n, ks, beta, L + 1, rng)
-        xb = torch.as_tensor(seq[:, :-1], dtype=torch.long, device=dev)
-        yb = torch.as_tensor(seq[:, -1], dtype=torch.long, device=dev)
+        if pool is None or pool_at + a.batch_size > len(pool):
+            ks = rng.choice(a.train_orders, size=pool_size)
+            pool = generate_batch(n, ks, beta, L + 1, rng)
+            rng.shuffle(pool)
+            pool_at = 0
+        seq = pool[pool_at:pool_at + a.batch_size]
+        pool_at += a.batch_size
+        full = torch.as_tensor(seq, dtype=torch.long, device=dev)
+        xb, yb = full[:, :-1], full[:, 1:]      # predict at every position
         opt.zero_grad()
-        loss = crit(model(xb), yb)
+        h = model.pos_embedding(model.token_embed(xb))
+        h = model.transformer(h, mask=model.causal_mask[:xb.shape[1], :xb.shape[1]],
+                              is_causal=True)
+        loss = crit(model.output_head(h).reshape(-1, n), yb.reshape(-1))
         loss.backward()
         nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         opt.step(); sched.step()
