@@ -2,7 +2,7 @@
 outputs/checkpoints/*.pt
 outputs/figures/*
 outputs/cache/*
-runs*/**/best_*.pt
+runs*/**/*.pt
 logs/
 jobs*.txt
 
