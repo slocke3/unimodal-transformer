@@ -48,6 +48,23 @@ for p in sorted(Path(a.runs_dir).glob("*/eval_cont.npz")):
 if not runs:
     raise SystemExit(f"no runs under {a.runs_dir}")
 
+# --- convergence: is 30k steps enough? -------------------------------------
+# These runs use 30k steps with all-position training, against 160k with
+# last-position training in the token sweeps. More targets per step lowers
+# gradient variance but is NOT a substitute for optimizer steps, so the tail of
+# the training loss is the thing to check before comparing across sweeps.
+print("Convergence check -- fractional drop over the last 20% of training:")
+for p_ in sorted(Path(a.runs_dir).glob("*/params.json")):
+    h = json.load(open(p_)).get("history") or []
+    if len(h) < 4:
+        continue
+    tail = [d["loss"] for d in h[-4:]]
+    drop = (tail[0] - tail[-1]) / max(abs(tail[0]), 1e-12)
+    flag = "STILL IMPROVING" if drop > 0.05 else "flat"
+    print("  %-34s final %.5f  drop %+6.1f%%  %s"
+          % (p_.parent.name, tail[-1], 100 * drop, flag))
+print()
+
 keys = sorted(runs, key=lambda k: (k[0], k[1]))
 print("%8s %8s %7s %9s %11s %11s %9s" % ("family","output","w","coverage",
       "in-band RMS","held-out RMS","floor"))

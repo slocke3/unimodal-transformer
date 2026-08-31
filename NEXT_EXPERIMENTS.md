@@ -261,3 +261,42 @@ identification mechanism exists — it simply does not extend past the training
 support. A family with fewer parameters and the base map interior to the range
 (A) is the best next bet, and the floor criterion will detect a transition in
 whatever geometry it happens.
+
+## OPEN QUESTION: is 30k steps enough for the continuous-embedding runs?
+
+The continuous-input sweep (`runs_cont`, 22 jobs) trains for **30k steps with
+an all-position objective**, against **160k steps with a last-position
+objective** in every token sweep before it. The justification was that scoring
+all 50 positions gives ~50x more targets per step, so 30k x 50 targets exceeds
+160k x 1.
+
+That reasoning is about *gradient signal*, and it is not obviously enough.
+More targets per step reduces gradient variance, but it does not substitute for
+optimizer steps: how far the weights travel through parameter space is set by
+the number of updates, not by how well each update is estimated. A model given
+50x cleaner gradients over 5x fewer steps can still be undertrained.
+
+Why it matters here specifically:
+
+* The context-length probe showed in-band identification was still improving
+  steeply at the end of the token runs (error ~ L^-1.7, unsaturated), so these
+  models were not obviously converged even at 160k steps.
+* If the continuous runs are undertrained, a flat held-out curve is
+  uninterpretable for the same reason the tilted sweep's was -- we would be
+  measuring optimization, not generalization.
+* Worse, it would bias the headline comparison: continuous-input models could
+  look *worse* than the token models purely from having had fewer updates,
+  which would invert the conclusion.
+
+What to check when the runs land:
+
+1. The convergence report now printed by `plot_cont_sweep.py` -- the fractional
+   drop in training loss over the last 20% of steps, per run. Anything still
+   falling more than a few percent is not converged.
+2. If several runs are still improving, the clean fix is a small step-count
+   ladder on ONE configuration (say tilted, bins, w=0.4) at 30k / 60k / 120k
+   steps, and read where in-band implied-map RMS saturates. That is 3 jobs and
+   settles the sizing for the whole family.
+3. Only then compare continuous against token runs. The bridge is implied-map
+   RMS relative to each one's own floor; the cross-entropies are not comparable
+   because the token runs carry an input-binning floor these do not.
