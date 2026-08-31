@@ -106,3 +106,63 @@ class DiscreteMLPBaseline(nn.Module):
 
     def count_parameters(self):
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
+
+class ContinuousTrajectoryTransformer(nn.Module):
+    """Causal transformer taking REAL x values instead of bin tokens.
+
+    The token-embedding models see only which of n_bins the state fell in, so
+    identifying the map means reconstructing a function from a coarsely
+    quantised, unevenly sampled view of it. Feeding x directly removes that
+    bottleneck: every context position is an exact (x_n, x_{n+1}) pair.
+
+    Two output modes, so the input change can be separated from the output one:
+      bins    logits over n_bins, cross-entropy against bin(x_{n+1}) -- the same
+              output as the earlier runs, so only the INPUT differs.
+      scalar  one real number, squared error against x_{n+1} -- continuous end
+              to end.
+
+    x is rescaled to [-1, 1] before the linear map. This is a pure
+    reparameterisation -- Linear(1,d) on 2x-1 equals Linear(1,d) on x with
+    weight 2w and bias b-w -- so it cannot change what the model can express,
+    and norm_first=True puts a LayerNorm on the embedding immediately anyway.
+    Kept as the conventional, better-conditioned starting point.
+    """
+
+    def __init__(self, n_bins=64, context_len=50, d_model=128, n_heads=4,
+                 n_layers=4, d_ff=None, dropout=0.1, output_mode="bins"):
+        super().__init__()
+        assert output_mode in ("bins", "scalar")
+        self.n_bins = n_bins
+        self.context_len = context_len
+        self.output_mode = output_mode
+        if d_ff is None:
+            d_ff = 4 * d_model
+
+        self.input_proj = nn.Linear(1, d_model)
+        self.pos_embedding = LearnedPositionalEmbedding(context_len, d_model)
+        layer = nn.TransformerEncoderLayer(
+            d_model=d_model, nhead=n_heads, dim_feedforward=d_ff,
+            dropout=dropout, batch_first=True, norm_first=True)
+        self.transformer = nn.TransformerEncoder(layer, num_layers=n_layers)
+        self.output_head = nn.Linear(d_model, n_bins if output_mode == "bins" else 1)
+        mask = torch.triu(torch.ones(context_len, context_len), diagonal=1).bool()
+        self.register_buffer("causal_mask", mask)
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+        nn.init.zeros_(self.output_head.bias)
+
+    def forward(self, x, all_positions=False):
+        """x: (batch, seq) float in [0,1]."""
+        h = self.input_proj((2.0 * x - 1.0).unsqueeze(-1))
+        h = self.pos_embedding(h)
+        s = x.shape[1]
+        h = self.transformer(h, mask=self.causal_mask[:s, :s], is_causal=True)
+        out = self.output_head(h if all_positions else h[:, -1:, :])
+        if self.output_mode == "scalar":
+            out = out.squeeze(-1)
+        return out if all_positions else (
+            out[:, 0] if self.output_mode == "scalar" else out[:, 0, :])
+
+    def count_parameters(self):
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
