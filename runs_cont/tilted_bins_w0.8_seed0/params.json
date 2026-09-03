@@ -1,0 +1,85 @@
+{
+  "family": "tilted",
+  "output_mode": "bins",
+  "band_width": 0.8,
+  "heldout_d": 0.2,
+  "R_lo": 0.125,
+  "R_hi": 1.0,
+  "n_tasks": 8000,
+  "n_train_traj": 32000,
+  "context_len": 50,
+  "n_bins": 64,
+  "traj_len": 150,
+  "d_model": 128,
+  "n_heads": 4,
+  "n_layers": 4,
+  "dropout": 0.1,
+  "lr": 0.0003,
+  "weight_decay": 0.0001,
+  "batch_size": 256,
+  "max_steps": 30000,
+  "log_every": 2500,
+  "n_p_eval": 49,
+  "n_R_eval": 60,
+  "n_eval_per_point": 30,
+  "seed": 0,
+  "out_dir": "runs_cont/tilted_bins_w0.8_seed0",
+  "band_lo": -0.8,
+  "band_hi": 0.8,
+  "history": [
+    {
+      "step": 1,
+      "loss": 7.032876014709473
+    },
+    {
+      "step": 2500,
+      "loss": 1.1614962816238403
+    },
+    {
+      "step": 5000,
+      "loss": 1.030055046081543
+    },
+    {
+      "step": 7500,
+      "loss": 0.7312177419662476
+    },
+    {
+      "step": 10000,
+      "loss": 0.6301849484443665
+    },
+    {
+      "step": 12500,
+      "loss": 0.5468196272850037
+    },
+    {
+      "step": 15000,
+      "loss": 0.6571809649467468
+    },
+    {
+      "step": 17500,
+      "loss": 0.4010404646396637
+    },
+    {
+      "step": 20000,
+      "loss": 0.4619539976119995
+    },
+    {
+      "step": 22500,
+      "loss": 0.4525451958179474
+    },
+    {
+      "step": 25000,
+      "loss": 0.4260218143463135
+    },
+    {
+      "step": 27500,
+      "loss": 0.4223577082157135
+    },
+    {
+      "step": 30000,
+      "loss": 0.38279134035110474
+    }
+  ],
+  "n_params": 808000,
+  "wall_sec": 2525.1
+}

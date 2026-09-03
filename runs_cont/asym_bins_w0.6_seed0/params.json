@@ -1,0 +1,85 @@
+{
+  "family": "asym",
+  "output_mode": "bins",
+  "band_width": 0.6,
+  "heldout_d": 0.2,
+  "R_lo": 0.125,
+  "R_hi": 1.0,
+  "n_tasks": 8000,
+  "n_train_traj": 32000,
+  "context_len": 50,
+  "n_bins": 64,
+  "traj_len": 150,
+  "d_model": 128,
+  "n_heads": 4,
+  "n_layers": 4,
+  "dropout": 0.1,
+  "lr": 0.0003,
+  "weight_decay": 0.0001,
+  "batch_size": 256,
+  "max_steps": 30000,
+  "log_every": 2500,
+  "n_p_eval": 41,
+  "n_R_eval": 60,
+  "n_eval_per_point": 30,
+  "seed": 0,
+  "out_dir": "runs_cont/asym_bins_w0.6_seed0",
+  "band_lo": 0.4,
+  "band_hi": 1.0,
+  "history": [
+    {
+      "step": 1,
+      "loss": 6.3086018562316895
+    },
+    {
+      "step": 2500,
+      "loss": 1.1815613508224487
+    },
+    {
+      "step": 5000,
+      "loss": 0.9800634980201721
+    },
+    {
+      "step": 7500,
+      "loss": 0.7994528412818909
+    },
+    {
+      "step": 10000,
+      "loss": 0.7821962237358093
+    },
+    {
+      "step": 12500,
+      "loss": 0.666614830493927
+    },
+    {
+      "step": 15000,
+      "loss": 0.6353006958961487
+    },
+    {
+      "step": 17500,
+      "loss": 0.5334517359733582
+    },
+    {
+      "step": 20000,
+      "loss": 0.5545780658721924
+    },
+    {
+      "step": 22500,
+      "loss": 0.4956505596637726
+    },
+    {
+      "step": 25000,
+      "loss": 0.48877307772636414
+    },
+    {
+      "step": 27500,
+      "loss": 0.5255307555198669
+    },
+    {
+      "step": 30000,
+      "loss": 0.48160311579704285
+    }
+  ],
+  "n_params": 808000,
+  "wall_sec": 2375.2
+}
