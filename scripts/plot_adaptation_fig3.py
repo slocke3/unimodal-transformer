@@ -92,10 +92,9 @@ ax.legend(frameon=False, fontsize=10, loc="upper left")
 for s in ("top", "right"):
     ax.spines[s].set_visible(False)
 
-fig.text(0.5, -0.04, "Curves below the dashed line generalize beyond the "
+fig.text(0.5, -0.03, "Curves below the dashed line generalize beyond the "
          "training distribution. Continuous input does; token input does not.\n"
-         "*the best predictor using only maps seen in training — the analogue "
-         "of the optimal in-task-distribution Bayes solution.",
+         "*the best predictor using only maps seen in training.",
          ha="center", fontsize=9.5, color="0.25")
 fig.tight_layout()
 for e in ("png", "pdf"):
