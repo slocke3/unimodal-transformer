@@ -94,3 +94,49 @@ def param_of_sigma(family, sigma):
 def sigma_range(family):
     g, s = arclength_table(family)
     return float(s[0]), float(s[-1])
+
+
+@lru_cache(maxsize=8)
+def measure_arclength_table(family, n_grid=85, n_bins=64, h=1e-4, n_orbit=24,
+                            traj_len=150, burn=50, n_R=8, seed=3):
+    """Arclength in the L^2(mu_p) norm, mu_p being the orbit measure of g_p.
+
+    The uniform-dx table weights every x equally, but a model only ever sees the
+    x values its orbits visit, and in the asymmetric family that measure migrates
+    as alpha falls -- toward the shifted peak, which is exactly where nearby maps
+    disagree most. That migration was the larger half of the 49% drift in the
+    clamping baseline (a factor 1.30, against 1.14 from the map geometry).
+
+    Weighting the speed by the orbit measure absorbs it: drift across the sweep
+    falls to 12%, against 26% for uniform dx. The cost is that this table depends
+    on sampled orbits and on the R range, so it is used for reading probes off an
+    existing evaluation grid, not for defining bands to train on.
+    """
+    from src.maps import iterate_family
+    lo, hi = FAMILY_RANGE[family]
+    mv = _MAPVEC[family]
+    p = np.linspace(lo, hi, n_grid)
+    Rs = np.linspace(0.25, 1.0, n_R)
+    v = np.empty(n_grid)
+    for i, pi in enumerate(p):
+        acc = []
+        for R in Rs:
+            rng = np.random.default_rng(seed)
+            x = np.concatenate([
+                iterate_family(rng.uniform(0.05, 0.95), R, pi, traj_len,
+                               family)[burn:] for _ in range(n_orbit)])
+            d = (mv(x, R, pi + h) - mv(x, R, pi - h)) / (2 * h * R)
+            acc.append(n_bins * np.sqrt(np.mean(d ** 2)))
+        v[i] = np.mean(acc)
+    sigma = np.concatenate(([0.0], np.cumsum((v[1:] + v[:-1]) / 2 * np.diff(p))))
+    return p, sigma - np.interp(FAMILY_BASE[family], p, sigma)
+
+
+def sigma_mu_of(family, p):
+    g, s = measure_arclength_table(family)
+    return float(np.interp(p, g, s))
+
+
+def param_of_sigma_mu(family, sigma):
+    g, s = measure_arclength_table(family)
+    return float(np.interp(sigma, s, g))
