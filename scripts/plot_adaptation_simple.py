@@ -37,7 +37,7 @@ from src.mapmetric import sigma_mu_of, param_of_sigma_mu
 
 SPAN = 0.8                     # usable alpha range, [0.2, 1.0]
 RS = np.linspace(0.125, 1.0, 60)
-RS = RS[RS >= 0.25][::6]
+RS = RS[RS >= 0.25]          # every R in the evaluated range, not a subsample
 
 
 def orbit(a, R, n=30, traj=150, burn=50, seed=3):

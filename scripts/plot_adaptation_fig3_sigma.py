@@ -57,7 +57,7 @@ def series(mode, coord):
         keep = z["R_grid"] >= 0.25
         edge = float(z["band_lo"])
         curve = np.nanmean(z["implied_rms"][:, keep], axis=1)   # RMS vs alpha
-        Rs = z["R_grid"][keep][::6]
+        Rs = z["R_grid"][keep]
         if coord == "param":
             x, probe = float(z["band_width"]), edge - 0.2
         elif coord == "sigma":
@@ -69,7 +69,7 @@ def series(mode, coord):
                            edge - 1e-3, xtol=1e-4)
         # implied_rms is smooth in alpha, so read the probe off by interpolation
         model = float(np.interp(probe, z["p_grid"], curve))
-        out.append((x, model, clamp(probe, edge, z["R_grid"][keep][::6]), probe))
+        out.append((x, model, clamp(probe, edge, z["R_grid"][keep]), probe))
     return list(zip(*out))
 
 
