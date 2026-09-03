@@ -56,8 +56,15 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--family", choices=["asym", "tilted"], required=True)
     ap.add_argument("--output_mode", choices=["bins", "scalar"], required=True)
-    ap.add_argument("--band_width", type=float, required=True)
-    ap.add_argument("--heldout_d", type=float, default=0.2)
+    ap.add_argument("--band_width", type=float, default=None,
+                    help="band half-width in PARAMETER units")
+    ap.add_argument("--heldout_d", type=float, default=0.2,
+                    help="probe offset in PARAMETER units")
+    ap.add_argument("--band_rho", type=float, default=None,
+                    help="band half-width in MAP-SPACE arclength (bin widths); "
+                         "mutually exclusive with --band_width")
+    ap.add_argument("--heldout_bins", type=float, default=4.0,
+                    help="probe offset in MAP-SPACE arclength (bin widths)")
     ap.add_argument("--R_lo", type=float, default=0.125)
     ap.add_argument("--R_hi", type=float, default=1.0)
     ap.add_argument("--n_tasks", type=int, default=8000)
@@ -81,11 +88,35 @@ def main():
     ap.add_argument("--out_dir", required=True)
     a = ap.parse_args()
 
+    if (a.band_width is None) == (a.band_rho is None):
+        raise SystemExit("give exactly one of --band_width or --band_rho")
     os.makedirs(a.out_dir, exist_ok=True)
     t0 = time.time()
     w, nb, L = a.band_width, a.n_bins, a.context_len
 
-    if a.family == "asym":
+    from src import mapmetric as mm
+
+    if a.band_rho is not None:
+        # Map-space design. The band is an interval of arclength around the
+        # logistic base map -- one-sided for asym (the base sits at the alpha=1
+        # endpoint) and two-sided for tilted (the base is interior) -- and the
+        # probes sit heldout_bins further along the SAME arclength, so their
+        # distance from the band edge is constant in map units at every rho.
+        rho, hb = a.band_rho, a.heldout_bins
+        g_lo, g_hi = mm.sigma_range(a.family)
+        if a.family == "asym":
+            band_sig = (max(-rho, g_lo), 0.0)
+            probe_sig = [-(rho + hb)]
+        else:
+            band_sig = (max(-rho, g_lo), min(rho, g_hi))
+            probe_sig = [-(rho + hb), rho + hb]
+        band_lo = mm.param_of_sigma(a.family, band_sig[0])
+        band_hi = mm.param_of_sigma(a.family, band_sig[1])
+        probe_sig = [g for g in probe_sig if g_lo - 1e-9 <= g <= g_hi + 1e-9]
+        probes = [mm.param_of_sigma(a.family, g) for g in probe_sig]
+        p_lo, p_hi = mm.FAMILY_RANGE[a.family]
+        p_eval = np.linspace(p_lo, p_hi, a.n_p_eval)
+    elif a.family == "asym":
         band_lo, band_hi = 1.0 - w, 1.0
         p_eval = np.linspace(0.2, 1.0, a.n_p_eval)
         probes = [band_lo - a.heldout_d]
@@ -94,6 +125,9 @@ def main():
         p_eval = np.linspace(-1.2, 1.2, a.n_p_eval)
         probes = [band_lo - a.heldout_d, band_hi + a.heldout_d]
     probes = [p for p in probes if p_eval.min() - 1e-9 <= p <= p_eval.max() + 1e-9]
+    # heldout_mask matches on exact grid values, and an arclength-derived probe
+    # will not land on a linspace, so splice the probes into the grid.
+    p_eval = np.unique(np.concatenate([p_eval, np.asarray(probes, dtype=float)]))
 
     import torch
     import torch.nn as nn
@@ -105,8 +139,14 @@ def main():
     rng = np.random.default_rng(a.seed)
 
     # -- training data: raw x windows --------------------------------------
-    ps = np.full(a.n_tasks, band_hi) if w == 0 else rng.uniform(
-        band_lo, band_hi, size=a.n_tasks)
+    if a.band_rho is not None:
+        # uniform in arclength, so tasks are spread evenly in MAP space
+        ps = np.array([mm.param_of_sigma(a.family, g) for g in
+                       rng.uniform(band_sig[0], band_sig[1], size=a.n_tasks)])
+    elif w == 0:
+        ps = np.full(a.n_tasks, band_hi)
+    else:
+        ps = rng.uniform(band_lo, band_hi, size=a.n_tasks)
     Rs = rng.uniform(a.R_lo, a.R_hi, size=a.n_tasks)
     n_per = max(1, a.n_train_traj // a.n_tasks)
     win = build_windows(list(zip(Rs, ps)), a.family, L, a.traj_len, n_per, rng)
@@ -190,8 +230,13 @@ def main():
              p_grid=p_eval, R_grid=R_eval, implied_rms=implied,
              binning_floor=floor, loss_grid=loss_grid, in_band=in_band,
              heldout_mask=held, probes=np.array(probes), band_lo=band_lo,
-             band_hi=band_hi, band_width=w, family=a.family,
-             output_mode=a.output_mode)
+             band_hi=band_hi, band_width=(np.nan if w is None else w),
+             family=a.family, output_mode=a.output_mode,
+             sigma_grid=np.array([mm.sigma_of(a.family, p) for p in p_eval]),
+             band_rho=(np.nan if a.band_rho is None else a.band_rho),
+             heldout_bins=(np.nan if a.band_rho is None else a.heldout_bins),
+             band_sigma=np.array([mm.sigma_of(a.family, band_lo),
+                                  mm.sigma_of(a.family, band_hi)]))
     with open(os.path.join(a.out_dir, "params.json"), "w") as f:
         json.dump({**vars(a), "band_lo": band_lo, "band_hi": band_hi,
                    "history": hist, "n_params": model.count_parameters(),
