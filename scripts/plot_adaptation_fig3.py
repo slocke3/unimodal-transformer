@@ -81,9 +81,6 @@ for s in ("top", "right"):
 ax = axes[1]
 ax.plot(tw, tc, "k--", lw=1.6, label="Clamp to nearest trained map*")
 ax.plot(tw, tm, "o-", color="k", mfc="k", ms=7, lw=1.4, label="binned input+output")
-for w, m, dd in zip(tw, tm, td):
-    ax.annotate(f"{dd:.1f} bins", (w, m), fontsize=8, color="0.35",
-                textcoords="offset points", xytext=(5, 6))
 ax.set_ylim(0, 0.33); ax.set_xlim(0.02, 0.78)
 ax.set_xlabel("training-band half-width  $w$")
 ax.set_ylabel("implied-map RMS at the probe")
