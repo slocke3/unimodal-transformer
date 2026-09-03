@@ -13,13 +13,18 @@ MAP-space distance past that run's band edge. Arclength is measured in the
 orbit-measure norm (see src.mapmetric), which is the one that absorbs both
 effects; distances are in bin widths.
 
-Left panel reproduces the parameter-coordinate figure, right panel is the same
-runs read in map space, so the flattening of the dashed line is visible directly.
+Three coordinates for the same six runs, so the null can be watched flattening:
+the parameter one it was measured in, arclength in map space, and a probe placed
+by solving clamp(alpha*, edge) = 0.080, which makes the null flat by construction.
+
+This is the diagnostic behind figures_cont/adaptation.png, which is the figure to
+read: normalising by the model's own in-band error divides all of this out.
 """
 import glob
 import re
 
 import numpy as np
+from scipy.optimize import brentq
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -27,7 +32,7 @@ import matplotlib.pyplot as plt
 from src.maps import asym_map_vec, iterate_asym
 from src.mapmetric import sigma_mu_of, param_of_sigma_mu
 
-NB, OFFSET = 64, 8.0          # probe offset past the band edge, in bin widths
+NB, OFFSET, TARGET = 64, 8.0, 0.080   # probe offset (bin widths) / null target
 
 
 def orbit(a, R, n=30, traj=150, burn=50, seed=3):
@@ -52,11 +57,16 @@ def series(mode, coord):
         keep = z["R_grid"] >= 0.25
         edge = float(z["band_lo"])
         curve = np.nanmean(z["implied_rms"][:, keep], axis=1)   # RMS vs alpha
+        Rs = z["R_grid"][keep][::6]
         if coord == "param":
             x, probe = float(z["band_width"]), edge - 0.2
-        else:
+        elif coord == "sigma":
             x = -sigma_mu_of("asym", edge)
             probe = param_of_sigma_mu("asym", sigma_mu_of("asym", edge) - OFFSET)
+        else:
+            x = -sigma_mu_of("asym", edge)
+            probe = brentq(lambda t: clamp(t, edge, Rs) - TARGET, 0.20,
+                           edge - 1e-3, xtol=1e-4)
         # implied_rms is smooth in alpha, so read the probe off by interpolation
         model = float(np.interp(probe, z["p_grid"], curve))
         out.append((x, model, clamp(probe, edge, z["R_grid"][keep][::6]), probe))
@@ -65,14 +75,16 @@ def series(mode, coord):
 
 plt.rcParams.update({"font.size": 12, "axes.linewidth": 1.1,
                      "xtick.direction": "in", "ytick.direction": "in"})
-fig, axes = plt.subplots(1, 2, figsize=(11.4, 4.7), sharey=True)
+fig, axes = plt.subplots(1, 3, figsize=(15.6, 4.7), sharey=True)
 YMAX = 0.115          # shared, so the null flattening is visible side by side
 
 for ax, coord, xlabel, title in (
         (axes[0], "param", "training-band half-width  $w$   (units of $\\alpha$)",
          "parameter coordinate"),
         (axes[1], "sigma", "training-band half-width   (bin widths of map)",
-         "map-space coordinate")):
+         "map-space coordinate"),
+        (axes[2], "matched", "training-band half-width   (bin widths of map)",
+         "null-matched probe")):
     sx, sm, sc, sp = series("scalar", coord)
     bx, bm, bc, _ = series("bins", coord)
     drift = 100 * (max(sc) / min(sc) - 1)
@@ -93,10 +105,10 @@ for ax, coord, xlabel, title in (
           f"  drift {drift:.0f}%")
 
 fig.text(0.5, -0.13,
-         "Continuous input, asymmetric family, same six runs in both panels.  Left: the probe sits a "
-         "fixed 0.2 of $\\alpha$ past the band edge, and the null rises.\nRight: it sits a fixed "
-         f"{OFFSET:.0f} bin widths past it in map space, and the null is flat, so the fall is the "
-         "model rather than the probe.\n*the best predictor using only maps seen in training.",
+         "Continuous input, asymmetric family, the same six runs read three ways.  A fixed step of "
+         "$\\alpha$ makes the null climb 49%; a fixed step in map space cuts that to 13%;\nsolving for "
+         f"the probe with clamp = {TARGET:.3f} pins it flat. The scalar curve falls under all three, so "
+         "the fall is the model, not the probe.\n*the best predictor using only maps seen in training.",
          ha="center", fontsize=9.5, color="0.25")
 fig.tight_layout()
 for e in ("png", "pdf"):
