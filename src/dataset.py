@@ -16,10 +16,22 @@ class DiscreteMapDataset(Dataset):
     """
     def __init__(self, n_trajectories=10_000, r_range=(0.5, 4.0),
                  context_len=50, burn_in=0, traj_len=200,
-                 n_bins=64, seed=0, r_values=None):
+                 n_bins=64, seed=0, r_values=None,
+                 input_mode="bins", n_bins_in=None, n_bins_out=None,
+                 output_mode="bins"):
+        """input_mode "continuous" hands the model raw x instead of bin indices;
+        output_mode "scalar" makes the target the raw next x for a square loss.
+        n_bins_in / n_bins_out default to n_bins, which reproduces the original
+        behaviour exactly -- the tokeniser and window count are unchanged."""
         super().__init__()
+        assert input_mode in ("bins", "continuous")
+        assert output_mode in ("bins", "scalar")
         self.context_len = context_len
         self.n_bins = n_bins
+        self.input_mode, self.output_mode = input_mode, output_mode
+        n_bins_in = n_bins if n_bins_in is None else n_bins_in
+        n_bins_out = n_bins if n_bins_out is None else n_bins_out
+        self.n_bins_in, self.n_bins_out = n_bins_in, n_bins_out
 
         rng = np.random.default_rng(seed)
         if r_values is not None:
@@ -31,33 +43,47 @@ class DiscreteMapDataset(Dataset):
         x0s = rng.uniform(0.05, 0.95, size=n_trajectories)
         window_size = context_len + 1
 
-        contexts_list, targets_list, r_labels_list = [], [], []
+        # Collect raw windows once, then derive whichever representation each
+        # mode needs. Tokenising afterwards is identical to tokenising the whole
+        # trajectory first, since tokenize_trajectory is elementwise.
+        raw_ctx_list, raw_tgt_list, r_labels_list = [], [], []
         for i in range(n_trajectories):
             traj = iterate_map(x0s[i], rs[i], burn_in + traj_len)[burn_in:]
-            tokens = tokenize_trajectory(traj, n_bins)
-            for t in range(len(tokens) - window_size):
-                contexts_list.append(tokens[t : t + context_len])
-                targets_list.append(tokens[t + context_len])
+            for t in range(len(traj) - window_size):
+                raw_ctx_list.append(traj[t : t + context_len])
+                raw_tgt_list.append(traj[t + context_len])
                 r_labels_list.append(rs[i])
 
-        # Force int dtype and handle the empty case (e.g. an empty split):
-        # np.array([]) defaults to float64, which breaks np.bincount below.
-        if contexts_list:
-            contexts = np.asarray(contexts_list, dtype=np.int64)
-            targets = np.asarray(targets_list, dtype=np.int64)
+        # Handle the empty case (e.g. an empty split): np.array([]) defaults to
+        # float64 with the wrong shape, which breaks the reshape below.
+        if raw_ctx_list:
+            raw_ctx = np.asarray(raw_ctx_list, dtype=np.float64)
+            raw_tgt = np.asarray(raw_tgt_list, dtype=np.float64)
         else:
-            contexts = np.empty((0, context_len), dtype=np.int64)
-            targets = np.empty((0,), dtype=np.int64)
+            raw_ctx = np.empty((0, context_len), dtype=np.float64)
+            raw_tgt = np.empty((0,), dtype=np.float64)
+
+        contexts = tokenize_trajectory(raw_ctx, n_bins_in)
+        targets = tokenize_trajectory(raw_tgt, n_bins_out)
         # Histogram of the token exposures in one pass through this dataset.
         # Positions repeated across sliding contexts are intentionally counted
-        # repeatedly because the model sees each occurrence.
+        # repeatedly because the model sees each occurrence. Continuous-input
+        # runs keep it, binned at n_bins_in, purely as a coverage diagnostic.
         self.token_counts = (
-            np.bincount(contexts.reshape(-1), minlength=n_bins)
-            + np.bincount(targets, minlength=n_bins)
+            np.bincount(contexts.reshape(-1), minlength=n_bins_in)[:n_bins_in]
+            + np.bincount(tokenize_trajectory(raw_tgt, n_bins_in),
+                          minlength=n_bins_in)[:n_bins_in]
         ).astype(np.int64)
 
-        self.contexts = torch.tensor(contexts, dtype=torch.long)
-        self.targets  = torch.tensor(targets, dtype=torch.long)
+        if input_mode == "continuous":
+            self.contexts = torch.tensor(raw_ctx, dtype=torch.float32)
+        else:
+            self.contexts = torch.tensor(contexts, dtype=torch.long)
+        if output_mode == "scalar":
+            self.targets = torch.tensor(raw_tgt, dtype=torch.float32)
+        else:
+            self.targets = torch.tensor(targets, dtype=torch.long)
+        self.raw_targets = torch.tensor(raw_tgt, dtype=torch.float32)
         self.r_labels = torch.tensor(np.array(r_labels_list), dtype=torch.float32)
 
     def __len__(self):

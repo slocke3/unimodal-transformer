@@ -28,51 +28,87 @@ def classify_regime(lyapunov, tol=0.02):
 @torch.no_grad()
 def evaluate_per_r(model, r_grid, device, context_len, n_bins,
                    burn_in=0, n_eval_per_r=30, traj_len=150, seed=99,
-                   return_histograms=False):
+                   return_histograms=False, input_mode="bins", n_bins_in=None,
+                   n_bins_out=None, output_mode="bins", return_rms=False):
     """
     Compute mean cross-entropy and top-1 accuracy per r value.
     When return_histograms=True, also return token-exposure counts with shape
-    (len(r_grid), n_bins). Context positions are counted each time they occur
+    (len(r_grid), n_bins_in). Context positions are counted each time they occur
     in a sliding input, and targets are counted once per example.
+
+    input_mode / output_mode select the representation, and n_bins_in /
+    n_bins_out default to n_bins so the original call sites are unchanged.
+    With output_mode="scalar" there is no distribution over tokens, so CE and
+    accuracy come back as NaN and the square loss goes in their place via
+    return_rms.
+
+    return_rms adds the implied-map RMS: the distance from the model's predicted
+    E[x_{n+1}] to the true next state. Because the maps are deterministic that
+    target is exact, and because the quantity is in map units rather than nats it
+    is the one metric comparable across every input and output resolution --
+    cross-entropy is bounded by log(n_bins_out) and so cannot be.
     """
     model.eval()
     rng = np.random.default_rng(seed)
+    n_in = n_bins if n_bins_in is None else n_bins_in
+    n_out = n_bins if n_bins_out is None else n_bins_out
     criterion = nn.CrossEntropyLoss(reduction="mean")
     window_size = context_len + 1
-    ce_per_r  = np.empty(len(r_grid))
-    acc_per_r = np.empty(len(r_grid))
-    hist_per_r = np.zeros((len(r_grid), n_bins), dtype=np.int64)
+    ce_per_r  = np.full(len(r_grid), np.nan)
+    acc_per_r = np.full(len(r_grid), np.nan)
+    rms_per_r = np.full(len(r_grid), np.nan)
+    hist_per_r = np.zeros((len(r_grid), n_in), dtype=np.int64)
+    centres = torch.tensor((np.arange(n_out) + 0.5) / n_out,
+                           dtype=torch.float32, device=device)
 
     for i, r in enumerate(r_grid):
-        contexts, targets = [], []
+        raw_ctx, raw_tgt = [], []
         for _ in range(n_eval_per_r):
             x0 = rng.uniform(0.05, 0.95)
             traj = iterate_map(x0, r, burn_in + traj_len)[burn_in:]
-            tokens = tokenize_trajectory(traj, n_bins)
-            for t in range(len(tokens) - window_size):
-                contexts.append(tokens[t : t + context_len])
-                targets.append(tokens[t + context_len])
+            for t in range(len(traj) - window_size):
+                raw_ctx.append(traj[t : t + context_len])
+                raw_tgt.append(traj[t + context_len])
 
-        contexts_array = np.array(contexts)
-        targets_array = np.array(targets)
+        raw_ctx = np.asarray(raw_ctx, dtype=np.float64)
+        raw_tgt = np.asarray(raw_tgt, dtype=np.float64)
+        ctx_tok = tokenize_trajectory(raw_ctx, n_in)
         if return_histograms:
             hist_per_r[i] = (
-                np.bincount(contexts_array.reshape(-1), minlength=n_bins)
-                + np.bincount(targets_array, minlength=n_bins)
+                np.bincount(ctx_tok.reshape(-1), minlength=n_in)[:n_in]
+                + np.bincount(tokenize_trajectory(raw_tgt, n_in),
+                              minlength=n_in)[:n_in]
             )
 
-        ctx = torch.tensor(contexts_array, dtype=torch.long).to(device)
-        tgt = torch.tensor(targets_array, dtype=torch.long).to(device)
-        logits = model(ctx)
-        ce_per_r[i]  = criterion(logits, tgt).item()
-        acc_per_r[i] = (logits.argmax(dim=-1) == tgt).float().mean().item()
+        if input_mode == "continuous":
+            ctx = torch.tensor(raw_ctx, dtype=torch.float32).to(device)
+        else:
+            ctx = torch.tensor(ctx_tok, dtype=torch.long).to(device)
+        truth = torch.tensor(raw_tgt, dtype=torch.float32).to(device)
+
+        with torch.no_grad():
+            out = model(ctx)
+            if output_mode == "scalar":
+                pred = out
+            else:
+                tgt = torch.tensor(tokenize_trajectory(raw_tgt, n_out),
+                                   dtype=torch.long).to(device)
+                ce_per_r[i]  = criterion(out, tgt).item()
+                acc_per_r[i] = (out.argmax(dim=-1) == tgt).float().mean().item()
+                pred = torch.softmax(out, dim=-1) @ centres
+            if return_rms:
+                rms_per_r[i] = torch.sqrt(
+                    ((pred - truth) ** 2).mean()).item()
 
         if (i + 1) % 100 == 0:
             print(f"  eval: {i+1}/{len(r_grid)}")
 
+    out = [ce_per_r, acc_per_r]
     if return_histograms:
-        return ce_per_r, acc_per_r, hist_per_r
-    return ce_per_r, acc_per_r
+        out.append(hist_per_r)
+    if return_rms:
+        out.append(rms_per_r)
+    return tuple(out) if len(out) > 2 else (ce_per_r, acc_per_r)
 
 
 def histogram_overlap(counts_a, counts_b):

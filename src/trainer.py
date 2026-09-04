@@ -34,7 +34,7 @@ class TrainerConfig:
 
 class Trainer:
     def __init__(self, model, train_loader, val_loader,
-                 config=None, run_name="run"):
+                 config=None, run_name="run", criterion=None):
         self.config = config or TrainerConfig()
         self.device = self.config.resolve_device()
         self.run_name = run_name
@@ -51,7 +51,9 @@ class Trainer:
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             self.optimizer, T_max=self.config.max_epochs
         )
-        self.criterion = nn.CrossEntropyLoss()
+        # Square-loss arms pass nn.MSELoss(); the default keeps token models
+        # on cross-entropy exactly as before.
+        self.criterion = criterion if criterion is not None else nn.CrossEntropyLoss()
 
         self.train_losses = []
         self.val_losses = []

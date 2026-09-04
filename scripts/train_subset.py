@@ -97,6 +97,14 @@ def main():
     # data / tokenization (also sweepable axes)
     p.add_argument("--context_len", type=int, default=50)
     p.add_argument("--n_bins", type=int, default=64)
+    p.add_argument("--n_bins_in", type=int, default=None,
+                   help="input vocabulary; defaults to --n_bins")
+    p.add_argument("--n_bins_out", type=int, default=None,
+                   help="output vocabulary; defaults to --n_bins. Pinning this "
+                        "while sweeping --n_bins_in keeps the target identical "
+                        "across the ladder, so the CE curves can be overlaid")
+    p.add_argument("--input_mode", choices=["bins", "continuous"], default="bins")
+    p.add_argument("--output_mode", choices=["bins", "scalar"], default="bins")
     p.add_argument("--traj_len", type=int, default=150)
     p.add_argument("--burn_in", type=int, default=0)
     p.add_argument("--n_train_traj", type=int, default=8000,
@@ -157,12 +165,19 @@ def main():
     # torch imports after arg parsing (fast --help on the login node)
     import torch
     from torch.utils.data import DataLoader
+    import torch.nn as nn
     from src.dataset import DiscreteMapDataset
-    from src.model import DiscreteTrajectoryTransformer
+    from src.model import (DiscreteTrajectoryTransformer,
+                           ContinuousTrajectoryTransformer)
     from src.trainer import Trainer, TrainerConfig
     from src.evaluation import (
         evaluate_per_r, histogram_overlap, plot_position_histogram_overlap,
     )
+
+    n_in = args.n_bins if args.n_bins_in is None else args.n_bins_in
+    n_out = args.n_bins if args.n_bins_out is None else args.n_bins_out
+    modes = dict(input_mode=args.input_mode, n_bins_in=n_in,
+                 n_bins_out=n_out, output_mode=args.output_mode)
 
     torch.manual_seed(args.seed)
     if torch.cuda.is_available():
@@ -185,7 +200,7 @@ def main():
     def loader(rvals, shuffle, seed):
         ds = DiscreteMapDataset(r_values=rvals, context_len=args.context_len,
                                 burn_in=args.burn_in, traj_len=args.traj_len,
-                                n_bins=args.n_bins, seed=seed)
+                                n_bins=args.n_bins, seed=seed, **modes)
         return DataLoader(ds, batch_size=args.batch_size, shuffle=shuffle,
                           num_workers=args.num_workers, pin_memory=True,
                           persistent_workers=args.num_workers > 0)
@@ -194,15 +209,26 @@ def main():
     val_loader = loader(val_r, False, args.seed + 1)
     train_token_hist = train_loader.dataset.token_counts.copy()
 
-    model = DiscreteTrajectoryTransformer(
-        n_bins=args.n_bins, context_len=args.context_len, d_model=args.d_model,
-        n_heads=args.n_heads, n_layers=args.n_layers, dropout=args.dropout)
+    if args.input_mode == "continuous":
+        model = ContinuousTrajectoryTransformer(
+            n_bins=n_out, context_len=args.context_len, d_model=args.d_model,
+            n_heads=args.n_heads, n_layers=args.n_layers, dropout=args.dropout,
+            output_mode=args.output_mode)
+    else:
+        model = DiscreteTrajectoryTransformer(
+            n_bins=args.n_bins, context_len=args.context_len,
+            d_model=args.d_model, n_heads=args.n_heads, n_layers=args.n_layers,
+            dropout=args.dropout, n_bins_in=n_in, n_bins_out=n_out,
+            output_mode=args.output_mode)
 
     tcfg = TrainerConfig(lr=args.lr, weight_decay=args.weight_decay,
                          max_epochs=args.max_epochs, patience=args.patience,
                          max_steps=args.max_steps, log_points=args.log_points,
                          save_dir=args.out_dir)
-    trainer = Trainer(model, train_loader, val_loader, config=tcfg, run_name="best")
+    trainer = Trainer(model, train_loader, val_loader, config=tcfg,
+                      run_name="best",
+                      criterion=nn.MSELoss() if args.output_mode == "scalar"
+                      else None)
     mode = (f"fixed-step({args.max_steps})" if args.max_steps is not None
             else f"early-stop(max_epochs={args.max_epochs},patience={args.patience})")
     print(f"[train_subset] placement={args.placement} m={args.m} "
@@ -230,23 +256,27 @@ def main():
 
     def eval_grids(tag):
         """Per-r CE/acc on the new-task grid and on the seen (training) r's."""
-        ce, acc, hist = evaluate_per_r(
+        ce, acc, hist, rms = evaluate_per_r(
             model=model, r_grid=r_grid, device=device,
             context_len=args.context_len, n_bins=args.n_bins,
             burn_in=args.burn_in, n_eval_per_r=args.n_eval_per_r,
-            traj_len=args.traj_len, seed=args.seed + 7, return_histograms=True)
-        ce_seen, acc_seen = evaluate_per_r(
+            traj_len=args.traj_len, seed=args.seed + 7,
+            return_histograms=True, return_rms=True, **modes)
+        ce_seen, acc_seen, rms_seen = evaluate_per_r(
             model=model, r_grid=seen_r, device=device,
             context_len=args.context_len, n_bins=args.n_bins,
             burn_in=args.burn_in, n_eval_per_r=args.n_eval_per_r,
-            traj_len=args.traj_len, seed=args.seed + 13)
-        print(f"[train_subset] eval[{tag}] new-grid={ce.mean():.4f} "
-              f"seen-r={ce_seen.mean():.4f}", flush=True)
-        return ce, acc, hist, ce_seen, acc_seen
+            traj_len=args.traj_len, seed=args.seed + 13,
+            return_rms=True, **modes)
+        print(f"[train_subset] eval[{tag}] new-grid CE={np.nanmean(ce):.4f} "
+              f"RMS={np.nanmean(rms):.5f} | seen-r CE={np.nanmean(ce_seen):.4f} "
+              f"RMS={np.nanmean(rms_seen):.5f}", flush=True)
+        return ce, acc, hist, ce_seen, acc_seen, rms, rms_seen
 
     # The model currently holds the weights load_best() restored: the final
     # weights in fixed-step mode, the best-val weights in epoch mode.
-    ce_per_r, acc_per_r, eval_token_hist_per_r, ce_at_train_r, acc_at_train_r = \
+    (ce_per_r, acc_per_r, eval_token_hist_per_r, ce_at_train_r, acc_at_train_r,
+     rms_per_r, rms_at_train_r) = \
         eval_grids("final" if args.max_steps is not None else "bestval")
 
     # Fixed-step mode also saved the best-val point along the SAME trajectory,
@@ -259,10 +289,13 @@ def main():
             ckpt = torch.load(bestval_path, map_location=device,
                               weights_only=True)
             model.load_state_dict(ckpt["model_state_dict"])
-            bv_ce, bv_acc, _, bv_ce_seen, bv_acc_seen = eval_grids("bestval")
+            (bv_ce, bv_acc, _, bv_ce_seen, bv_acc_seen,
+             bv_rms, bv_rms_seen) = eval_grids("bestval")
             extra = {"ce_per_r_bestval": bv_ce, "acc_per_r_bestval": bv_acc,
                      "ce_at_train_r_bestval": bv_ce_seen,
-                     "acc_at_train_r_bestval": bv_acc_seen}
+                     "acc_at_train_r_bestval": bv_acc_seen,
+                     "rms_per_r_bestval": bv_rms,
+                     "rms_at_train_r_bestval": bv_rms_seen}
         else:
             print("[train_subset] WARNING: no best_bestval.pt found", flush=True)
 
@@ -272,7 +305,7 @@ def main():
         for counts in eval_token_hist_per_r
     ])
     aggregate_hist_overlap = histogram_overlap(train_token_hist, eval_token_hist)
-    x_bin_edges = np.linspace(0.0, 1.0, args.n_bins + 1)
+    x_bin_edges = np.linspace(0.0, 1.0, n_in + 1)
 
     # For uniform interval sampling, use the requested interval rather than
     # the extrema of a finite random draw. Invariant-guided placements retain
@@ -293,9 +326,12 @@ def main():
              hist_overlap_per_r=hist_overlap_per_r,
              aggregate_hist_overlap=aggregate_hist_overlap,
              seen_r=seen_r, ce_at_train_r=ce_at_train_r,
-             acc_at_train_r=acc_at_train_r, **extra)
+             acc_at_train_r=acc_at_train_r,
+             rms_per_r=rms_per_r, rms_at_train_r=rms_at_train_r,
+             n_bins_in=n_in, n_bins_out=n_out, input_mode=args.input_mode,
+             output_mode=args.output_mode, **extra)
     plot_position_histogram_overlap(
-        train_token_hist, eval_token_hist, args.n_bins,
+        train_token_hist, eval_token_hist, n_in,
         save_path=os.path.join(args.out_dir, "position_hist_overlap.png"),
     )
     with open(os.path.join(args.out_dir, "history.json"), "w") as f:
@@ -308,12 +344,13 @@ def main():
                    "wall_sec": round(time.time() - t0, 1)}, f, indent=2)
 
     oo = ~in_window
-    in_window_ce = ce_per_r[in_window].mean() if in_window.any() else float("nan")
-    complement_ce = ce_per_r[oo].mean() if oo.any() else float("nan")
+    in_window_ce = np.nanmean(ce_per_r[in_window]) if in_window.any() else float("nan")
+    complement_ce = np.nanmean(ce_per_r[oo]) if oo.any() else float("nan")
     print(f"[train_subset] DONE in {time.time()-t0:.0f}s | "
           f"mean CE in-window={in_window_ce:.3f} "
           f"complement={complement_ce:.3f} "
-          f"seen-r={ce_at_train_r.mean():.3f} "
+          f"seen-r={np.nanmean(ce_at_train_r):.3f} "
+          f"RMS new-grid={np.nanmean(rms_per_r):.5f} "
           f"hist-overlap={aggregate_hist_overlap:.1%}", flush=True)
 
 

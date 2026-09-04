@@ -18,20 +18,33 @@ class DiscreteTrajectoryTransformer(nn.Module):
     """
     Causal transformer for next-token prediction on tokenized map trajectories.
 
-    Input:  (batch, seq_len) integer bin indices
-    Output: (batch, n_bins) logits for the next token
+    Input:  (batch, seq_len) integer bin indices, n_bins_in of them
+    Output: (batch, n_bins_out) logits, or (batch,) with output_mode="scalar"
+
+    Input and output vocabularies are separate so that a sweep over input
+    resolution can hold the output fixed. With one shared n_bins a coarse arm
+    differs from a fine one in both the view it gets and the target it predicts,
+    and a shift in the result cannot be attributed to either; pinning n_bins_out
+    makes the output literally identical across the ladder, which also gives
+    every arm the same cross-entropy support (max log n_bins_out) so the curves
+    can be overlaid. Defaults keep both equal to n_bins, i.e. the old behaviour.
     """
     def __init__(self, n_bins=64, context_len=50, d_model=128,
-                 n_heads=4, n_layers=4, d_ff=None, dropout=0.1):
+                 n_heads=4, n_layers=4, d_ff=None, dropout=0.1,
+                 n_bins_in=None, n_bins_out=None, output_mode="bins"):
         super().__init__()
-        self.n_bins = n_bins
+        assert output_mode in ("bins", "scalar")
+        self.n_bins_in = n_bins if n_bins_in is None else n_bins_in
+        self.n_bins_out = n_bins if n_bins_out is None else n_bins_out
+        self.n_bins = self.n_bins_out
+        self.output_mode = output_mode
         self.context_len = context_len
         self.d_model = d_model
 
         if d_ff is None:
             d_ff = 4 * d_model
 
-        self.token_embed = nn.Embedding(n_bins, d_model)
+        self.token_embed = nn.Embedding(self.n_bins_in, d_model)
         self.pos_embedding = LearnedPositionalEmbedding(context_len, d_model)
 
         encoder_layer = nn.TransformerEncoderLayer(
@@ -39,7 +52,8 @@ class DiscreteTrajectoryTransformer(nn.Module):
             dropout=dropout, batch_first=True, norm_first=True,
         )
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
-        self.output_head = nn.Linear(d_model, n_bins)
+        self.output_head = nn.Linear(
+            d_model, self.n_bins_out if output_mode == "bins" else 1)
 
         mask = torch.triu(torch.ones(context_len, context_len), diagonal=1).bool()
         self.register_buffer("causal_mask", mask)
@@ -57,7 +71,8 @@ class DiscreteTrajectoryTransformer(nn.Module):
         h = self.token_embed(x)
         h = self.pos_embedding(h)
         h = self.transformer(h, mask=self.causal_mask[:seq_len, :seq_len], is_causal=True)
-        return self.output_head(h[:, -1, :])
+        out = self.output_head(h[:, -1, :])
+        return out.squeeze(-1) if self.output_mode == "scalar" else out
 
     @torch.no_grad()
     def predict_rollout(self, x, n_steps, temperature=1.0):
