@@ -10,8 +10,11 @@ cross-entropies share one support and can be read against each other.
 Two figures, because the sweep has two halves:
   _ce   cross-entropy in nats for the CE-trained arms, fixed-step against
         early-stopped, exactly the axes of the original.
-  _rms  implied-map RMS for both losses, which is the only quantity defined for
-        the square-loss arms and comparable across the two.
+  _loss each arm's OWN training objective at the fixed-step checkpoint --
+        cross-entropy in nats for the CE-trained arms, mean squared error for
+        the square-loss ones. The two are different objectives, so only the
+        SHAPE and the location of the drop transfer between the colours; the
+        levels do not, and each carries its own no-model reference line.
 """
 import numpy as np
 import matplotlib
@@ -53,42 +56,45 @@ def predict_the_mean_rms(n_r=60, n_traj=8, traj_len=150, burn=50, seed=0):
 def grid(kind, fname):
     fig, axes = plt.subplots(2, len(COLS), figsize=(18.5, 6.6),
                              sharex=True, sharey="row")
-    ref = np.log(64) if kind == "ce" else predict_the_mean_rms()
+    ref_ce, ref_mse = np.log(64), predict_the_mean_rms() ** 2
     for j, (itag, title) in enumerate(COLS):
         for i, (row_key, row_lab) in enumerate(
                 (("at_train_r", "Seen tasks\n(evaluated at training $r$)"),
                  ("per_r", "New tasks\n(full-range grid)"))):
             ax = axes[i, j]
-            ax.axhline(ref, color="0.6", lw=1, ls=":")
             if kind == "ce":
-                series = ((f"ce_{row_key}", "bins", ORANGE, "o", ORANGE,
+                ax.axhline(ref_ce, color="0.6", lw=1, ls=":")
+                series = ((f"ce_{row_key}", "bins", ORANGE, "o", ORANGE, 1.0,
                            "Fixed steps (final)"),
-                          (f"ce_{row_key}_bestval", "bins", NAVY, "s", "white",
+                          (f"ce_{row_key}_bestval", "bins", NAVY, "s", "white", 1.0,
                            "Early stopping (best val)"))
             else:
-                series = ((f"rms_{row_key}", "bins", ORANGE, "o", ORANGE,
-                           "Cross-entropy loss"),
-                          (f"rms_{row_key}", "mse", NAVY, "s", "white",
-                           "Square loss"))
-            for key, otag, col, mk, mfc, lab in series:
-                ax.plot(MS, load(itag, otag, key), mk + "-", color=col, mfc=mfc,
-                        ms=5, lw=1.4, label=lab)
+                # different objectives, so each gets its own no-model baseline
+                ax.axhline(ref_ce, color=ORANGE, lw=1, ls=":", alpha=0.55)
+                ax.axhline(ref_mse, color=NAVY, lw=1, ls=":", alpha=0.55)
+                series = ((f"ce_{row_key}", "bins", ORANGE, "o", ORANGE, 1.0,
+                           "Cross-entropy loss (nats)"),
+                          (f"rms_{row_key}", "mse", NAVY, "s", "white", 2.0,
+                           "Square loss (MSE)"))
+            for key, otag, col, mk, mfc, power, lab in series:
+                ax.plot(MS, load(itag, otag, key) ** power, mk + "-", color=col,
+                        mfc=mfc, ms=5, lw=1.4, label=lab)
             ax.set_xscale("log"); ax.set_yscale("log")
             if i == 0:
                 ax.set_title(title, fontsize=12)
             if j == 0:
                 ax.set_ylabel(row_lab + ("\nMean cross-entropy (nats)" if kind == "ce"
-                                         else "\nImplied-map RMS"), fontsize=10)
+                                         else "\nTraining objective"), fontsize=10)
             if i == 1:
                 ax.set_xlabel("training tasks", fontsize=10)
             ax.grid(alpha=0.25, lw=0.5)
             for s in ("top", "right"):
                 ax.spines[s].set_visible(False)
     axes[0, 0].legend(frameon=False, fontsize=8.5, loc="lower left")
-    lab = ("uniform prediction over 64 bins" if kind == "ce"
-           else "predicting each $r$'s mean state")
+    lab = ("dotted: uniform prediction over 64 bins" if kind == "ce" else
+           "each loss on its own scale, with its own no-model baseline dotted")
     fig.suptitle("Controlled task diversity by input resolution   |   total trajectories "
-                 f"fixed at 32000, output fixed at 64 bins   |   dotted: {lab}",
+                 f"fixed at 32000, output fixed at 64 bins   |   {lab}",
                  fontsize=12.5, y=1.005)
     fig.tight_layout()
     for e in ("png", "pdf"):
@@ -97,4 +103,4 @@ def grid(kind, fname):
 
 
 grid("ce", "taskdiv_by_bins_ce")
-grid("rms", "taskdiv_by_bins_rms")
+grid("loss", "taskdiv_by_bins_loss")
