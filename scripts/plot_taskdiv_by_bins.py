@@ -40,23 +40,30 @@ def load(itag, otag, key):
     return np.array(out)
 
 
-def predict_the_mean_rms(n_r=60, n_traj=8, traj_len=150, burn=50, seed=0):
-    """No-model reference for the RMS panels: the per-r spread of x_{n+1}, which
-    is what you get by always predicting that r's mean state. The analogue of
-    the uniform-over-64-bins line on the cross-entropy panels."""
+def uniform_guess_mse(n_r=60, n_traj=8, traj_len=150, burn=50, seed=0):
+    """The square-loss analogue of the uniform-over-64-bins cross-entropy line.
+
+    A flat distribution on [0,1] has mean 1/2, so the point prediction it implies
+    is the constant 1/2, and its MSE is E[(x - 1/2)^2] over the evaluation data.
+    Both baselines then answer the same question -- what a model that has learnt
+    nothing at all achieves -- which is the convention of the original figure.
+
+    Not the per-r variance: predicting each r's own mean state already knows
+    which task it is in, which is a far stronger reference and not the analogue
+    of a uniform distribution.
+    """
     rng = np.random.default_rng(seed)
-    out = []
-    for r in np.linspace(0.5, 4.0, n_r):
-        xs = np.concatenate([iterate_map(rng.uniform(.05, .95), r, traj_len)[burn:]
-                             for _ in range(n_traj)])
-        out.append(xs.std())
-    return float(np.mean(out))
+    xs = np.concatenate([
+        np.concatenate([iterate_map(rng.uniform(.05, .95), r, traj_len)[burn:]
+                        for _ in range(n_traj)])
+        for r in np.linspace(0.5, 4.0, n_r)])
+    return float(((xs - 0.5) ** 2).mean())
 
 
 def grid(kind, fname):
     fig, axes = plt.subplots(2, len(COLS), figsize=(18.5, 6.6),
                              sharex=True, sharey="row")
-    ref_ce, ref_mse = np.log(64), predict_the_mean_rms() ** 2
+    ref_ce, ref_mse = np.log(64), uniform_guess_mse()
     for j, (itag, title) in enumerate(COLS):
         for i, (row_key, row_lab) in enumerate(
                 (("at_train_r", "Seen tasks\n(evaluated at training $r$)"),
@@ -69,7 +76,8 @@ def grid(kind, fname):
                           (f"ce_{row_key}_bestval", "bins", NAVY, "s", "white", 1.0,
                            "Early stopping (best val)"))
             else:
-                # different objectives, so each gets its own no-model baseline
+                # different objectives, so each gets its own no-model baseline;
+                # both are "has learnt nothing", not "knows which r it is in"
                 ax.axhline(ref_ce, color=ORANGE, lw=1, ls=":", alpha=0.55)
                 ax.axhline(ref_mse, color=NAVY, lw=1, ls=":", alpha=0.55)
                 series = ((f"ce_{row_key}", "bins", ORANGE, "o", ORANGE, 1.0,
@@ -92,7 +100,8 @@ def grid(kind, fname):
                 ax.spines[s].set_visible(False)
     axes[0, 0].legend(frameon=False, fontsize=8.5, loc="lower left")
     lab = ("dotted: uniform prediction over 64 bins" if kind == "ce" else
-           "each loss on its own scale, with its own no-model baseline dotted")
+           "dotted: what a model that learnt nothing gets -- uniform over 64 bins, "
+           "or the constant $x=1/2$")
     fig.suptitle("Controlled task diversity by input resolution   |   total trajectories "
                  f"fixed at 32000, output fixed at 64 bins   |   {lab}",
                  fontsize=12.5, y=1.005)
