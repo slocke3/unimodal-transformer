@@ -103,6 +103,10 @@ def main():
                    help="output vocabulary; defaults to --n_bins. Pinning this "
                         "while sweeping --n_bins_in keeps the target identical "
                         "across the ladder, so the CE curves can be overlaid")
+    p.add_argument("--synonyms", type=int, default=1,
+                   help="split each input bin into this many interchangeable "
+                        "tokens, inflating the vocabulary without changing the "
+                        "information, the sequence length or the output space")
     p.add_argument("--input_mode", choices=["bins", "continuous"], default="bins")
     p.add_argument("--output_mode", choices=["bins", "scalar"], default="bins")
     p.add_argument("--traj_len", type=int, default=150)
@@ -177,7 +181,8 @@ def main():
     n_in = args.n_bins if args.n_bins_in is None else args.n_bins_in
     n_out = args.n_bins if args.n_bins_out is None else args.n_bins_out
     modes = dict(input_mode=args.input_mode, n_bins_in=n_in,
-                 n_bins_out=n_out, output_mode=args.output_mode)
+                 n_bins_out=n_out, output_mode=args.output_mode,
+                 synonyms=args.synonyms)
 
     torch.manual_seed(args.seed)
     if torch.cuda.is_available():
@@ -218,8 +223,8 @@ def main():
         model = DiscreteTrajectoryTransformer(
             n_bins=args.n_bins, context_len=args.context_len,
             d_model=args.d_model, n_heads=args.n_heads, n_layers=args.n_layers,
-            dropout=args.dropout, n_bins_in=n_in, n_bins_out=n_out,
-            output_mode=args.output_mode)
+            dropout=args.dropout, n_bins_in=n_in * args.synonyms,
+            n_bins_out=n_out, output_mode=args.output_mode)
 
     tcfg = TrainerConfig(lr=args.lr, weight_decay=args.weight_decay,
                          max_epochs=args.max_epochs, patience=args.patience,
@@ -329,7 +334,7 @@ def main():
              acc_at_train_r=acc_at_train_r,
              rms_per_r=rms_per_r, rms_at_train_r=rms_at_train_r,
              n_bins_in=n_in, n_bins_out=n_out, input_mode=args.input_mode,
-             output_mode=args.output_mode, **extra)
+             output_mode=args.output_mode, synonyms=args.synonyms, **extra)
     plot_position_histogram_overlap(
         train_token_hist, eval_token_hist, n_in,
         save_path=os.path.join(args.out_dir, "position_hist_overlap.png"),

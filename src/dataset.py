@@ -18,7 +18,7 @@ class DiscreteMapDataset(Dataset):
                  context_len=50, burn_in=0, traj_len=200,
                  n_bins=64, seed=0, r_values=None,
                  input_mode="bins", n_bins_in=None, n_bins_out=None,
-                 output_mode="bins"):
+                 output_mode="bins", synonyms=1):
         """input_mode "continuous" hands the model raw x instead of bin indices;
         output_mode "scalar" makes the target the raw next x for a square loss.
         n_bins_in / n_bins_out default to n_bins, which reproduces the original
@@ -65,12 +65,18 @@ class DiscreteMapDataset(Dataset):
 
         contexts = tokenize_trajectory(raw_ctx, n_bins_in)
         targets = tokenize_trajectory(raw_tgt, n_bins_out)
+        self.synonyms = synonyms
+        if synonyms > 1:
+            assert input_mode == "bins", "synonyms only apply to binned input"
+            contexts = contexts * synonyms + rng.integers(
+                0, synonyms, size=contexts.shape)
         # Histogram of the token exposures in one pass through this dataset.
         # Positions repeated across sliding contexts are intentionally counted
         # repeatedly because the model sees each occurrence. Continuous-input
         # runs keep it, binned at n_bins_in, purely as a coverage diagnostic.
         self.token_counts = (
-            np.bincount(contexts.reshape(-1), minlength=n_bins_in)[:n_bins_in]
+            np.bincount(tokenize_trajectory(raw_ctx, n_bins_in).reshape(-1),
+                        minlength=n_bins_in)[:n_bins_in]
             + np.bincount(tokenize_trajectory(raw_tgt, n_bins_in),
                           minlength=n_bins_in)[:n_bins_in]
         ).astype(np.int64)

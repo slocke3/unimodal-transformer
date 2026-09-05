@@ -29,7 +29,8 @@ def classify_regime(lyapunov, tol=0.02):
 def evaluate_per_r(model, r_grid, device, context_len, n_bins,
                    burn_in=0, n_eval_per_r=30, traj_len=150, seed=99,
                    return_histograms=False, input_mode="bins", n_bins_in=None,
-                   n_bins_out=None, output_mode="bins", return_rms=False):
+                   n_bins_out=None, output_mode="bins", return_rms=False,
+                   synonyms=1):
     """
     Compute mean cross-entropy and top-1 accuracy per r value.
     When return_histograms=True, also return token-exposure counts with shape
@@ -73,7 +74,7 @@ def evaluate_per_r(model, r_grid, device, context_len, n_bins,
         raw_ctx = np.asarray(raw_ctx, dtype=np.float64)
         raw_tgt = np.asarray(raw_tgt, dtype=np.float64)
         ctx_tok = tokenize_trajectory(raw_ctx, n_in)
-        if return_histograms:
+        if return_histograms:  # counted on the bins, before any synonym split
             hist_per_r[i] = (
                 np.bincount(ctx_tok.reshape(-1), minlength=n_in)[:n_in]
                 + np.bincount(tokenize_trajectory(raw_tgt, n_in),
@@ -83,7 +84,10 @@ def evaluate_per_r(model, r_grid, device, context_len, n_bins,
         if input_mode == "continuous":
             ctx = torch.tensor(raw_ctx, dtype=torch.float32).to(device)
         else:
-            ctx = torch.tensor(ctx_tok, dtype=torch.long).to(device)
+            tok = ctx_tok
+            if synonyms > 1:
+                tok = tok * synonyms + rng.integers(0, synonyms, size=tok.shape)
+            ctx = torch.tensor(tok, dtype=torch.long).to(device)
         truth = torch.tensor(raw_tgt, dtype=torch.float32).to(device)
 
         with torch.no_grad():
