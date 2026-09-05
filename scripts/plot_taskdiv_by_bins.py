@@ -111,5 +111,65 @@ def grid(kind, fname):
     print(f"wrote figures_taskdiv/{fname}.png")
 
 
+def overlay(fname="taskdiv_overlay"):
+    """All binnings on shared axes, one column per loss, coloured by resolution.
+
+    The per-resolution grid puts each binning in its own panel, which makes the
+    shape of any one curve clear but leaves the ordering between them to be read
+    across a page. Overlaying them shows the ordering directly: where the curves
+    sit relative to each other, and where their drops fall.
+
+    Continuous input is left out. It is not a point on this ladder -- a bin
+    embedding is a lookup table with no notion that neighbouring bins are near,
+    while Linear(1, d) has that metric built in -- so placing it on a resolution
+    axis would imply a limit it does not take.
+    """
+    bins = [("in8", 8), ("in16", 16), ("in32", 32), ("in64", 64),
+            ("in128", 128), ("in256", 256)]
+    cmap = plt.get_cmap("viridis")
+    cols = [cmap(v) for v in np.linspace(0.12, 0.88, len(bins))]
+    fig, axes = plt.subplots(2, 2, figsize=(11.2, 7.4), sharex=True)
+    ref = {"bins": np.log(64), "mse": uniform_guess_mse()}
+    for j, (otag, ctitle, ylab, power) in enumerate(
+            (("bins", "Cross-entropy loss", "Mean cross-entropy (nats)", 1.0),
+             ("mse", "Square loss", "Mean squared error", 2.0))):
+        for i, (row_key, row_lab) in enumerate(
+                (("at_train_r", "Seen tasks\n(evaluated at training $r$)"),
+                 ("per_r", "New tasks\n(full-range grid)"))):
+            ax = axes[i, j]
+            ax.axhline(ref[otag], color="0.55", lw=1, ls=":")
+            key = ("ce_" if otag == "bins" else "rms_") + row_key
+            for (itag, nb), c in zip(bins, cols):
+                ax.plot(MS, load(itag, otag, key) ** power, "o-", color=c,
+                        ms=5, lw=1.6, label=str(nb))
+            ax.set_xscale("log"); ax.set_yscale("log")
+            ax.grid(alpha=0.25, lw=0.5)
+            if i == 0:
+                ax.set_title(ctitle, fontsize=13)
+            if i == 1:
+                ax.set_xlabel("number of training tasks (distinct $r$ values)")
+            ax.set_ylabel((row_lab + "\n" + ylab) if j == 0 else ylab, fontsize=10)
+            for sp in ("top", "right"):
+                ax.spines[sp].set_visible(False)
+        # share y down each column so the two rows are directly comparable
+        # (the two columns are different objectives and must NOT share)
+        lo = min(axes[i, j].get_ylim()[0] for i in (0, 1))
+        hi = max(axes[i, j].get_ylim()[1] for i in (0, 1))
+        for i in (0, 1):
+            axes[i, j].set_ylim(lo, hi)
+    axes[1, 0].legend(frameon=False, fontsize=9.5, ncol=2, loc="lower left",
+                      title="input bins", title_fontsize=9.5)
+    fig.text(0.5, -0.035,
+             "Output pinned at 64 bins and total trajectories at 32000 throughout, so only the input resolution "
+             "changes.  Fixed-step checkpoint.\nDotted: what a model that learnt nothing achieves.  "
+             "Continuous input is excluded -- it is a different inductive bias, not the fine end of this ladder.",
+             ha="center", fontsize=9.5, color="0.25")
+    fig.tight_layout()
+    for e in ("png", "pdf"):
+        fig.savefig(f"figures_taskdiv/{fname}.{e}", dpi=170, bbox_inches="tight")
+    print(f"wrote figures_taskdiv/{fname}.png")
+
+
 grid("ce", "taskdiv_by_bins_ce")
 grid("loss", "taskdiv_by_bins_loss")
+overlay()
