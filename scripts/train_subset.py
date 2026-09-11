@@ -102,7 +102,10 @@ def main():
     p.add_argument("--n_bins_out", type=int, default=None,
                    help="output vocabulary; defaults to --n_bins. Pinning this "
                         "while sweeping --n_bins_in keeps the target identical "
-                        "across the ladder, so the CE curves can be overlaid")
+                        "across the ladder, so the CE curves can be overlaid. "
+                        "IGNORED when --output_mode scalar: the head is then a "
+                        "single unit and the target is the exact next state, so "
+                        "there is no output binning to set")
     p.add_argument("--synonyms", type=int, default=1,
                    help="split each input bin into this many interchangeable "
                         "tokens, inflating the vocabulary without changing the "

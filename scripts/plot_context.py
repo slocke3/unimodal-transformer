@@ -77,7 +77,7 @@ h = [plt.Line2D([], [], color="k", lw=1.7, marker="o", ms=6),
 axes[1].legend(h, ["trained at this length", "trained at 50, attention restricted"],
                frameon=False, fontsize=9.5, loc="lower left")
 
-note = ("Square loss, 64 input bins, 64-bin output, 320k steps, 32000 trajectories throughout.\n"
+note = ("Square loss against the exact next state, 64 input bins, 320k steps, 32000 trajectories.\n"
         "The two meet at $L=50$ by construction, where the restriction is vacuous.")
 if missing:
     note += f"\n$L=75$ incomplete: {7 - sum(1 for L in missing if L == 75)}/7 task counts finished."
@@ -107,7 +107,7 @@ ax2[1].set_xlabel("context length")
 ax2[0].legend(frameon=False, fontsize=9, ncol=2, loc="lower left",
               title="training tasks $m$", title_fontsize=9)
 fig2.text(0.5, -0.035,
-          "Square loss, 64 input bins, 64-bin output, 320k steps, 32000 trajectories, one model trained per context.\n"
+          "Square loss against the exact next state, 64 input bins, 320k steps, 32000 trajectories, one model per context.\n"
           "traj_len = context_len + 100 throughout, so every arm keeps 99 windows per trajectory and the same pool.",
           ha="center", fontsize=9.5, color="0.25")
 fig2.tight_layout()
@@ -154,7 +154,7 @@ ax3[1].set_xlabel("number of training tasks (distinct $r$ values)")
 ax3[0].legend(frameon=False, fontsize=9.5, ncol=2, loc="lower left",
               title="context length", title_fontsize=9.5)
 fig3.text(0.5, -0.035,
-          "Square loss, 64 input bins, 64-bin output, 320k steps, 32000 trajectories, one model per context length.\n"
+          "Square loss against the exact next state, 64 input bins, 320k steps, 32000 trajectories, one model per context length.\n"
           "traj_len = context_len + 100 throughout, so every arm keeps 99 windows per trajectory and the same pool.",
           ha="center", fontsize=9.5, color="0.25")
 fig3.tight_layout()

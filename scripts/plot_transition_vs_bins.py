@@ -98,7 +98,7 @@ for s in ("top", "right"):
     ax.spines[s].set_visible(False)
 
 fig.text(0.5, -0.05,
-         "Output pinned at 64 bins throughout, total trajectories at 32000, so only the input changes.\n"
+         "Output held identical across arms, total trajectories at 32000, so only the input changes.\n"
          "$m^*$ is the half-drop point of new-task implied-map RMS. Continuous input is not the fine-binning limit:\n"
          "a bin embedding is a lookup table with no notion that neighbouring bins are near, so finer bins need MORE tasks.",
          ha="center", fontsize=9.5, color="0.25")

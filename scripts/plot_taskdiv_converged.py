@@ -94,7 +94,7 @@ axes[1, 0].legend(frameon=False, fontsize=9.5, ncol=2, loc="lower left",
                   title="input bins", title_fontsize=9.5)
 fig.text(0.5, -0.035,
          "Every arm at a converged checkpoint: 160k steps for 8-32 bins, which had levelled off by 40k, "
-         "320k for 64-256 bins, which had not.\nOutput pinned at 64 bins and total trajectories at 32000 "
+         "320k for 64-256 bins, which had not.\nOutput held identical across arms and total trajectories at 32000 "
          "throughout, so only input resolution changes.  Continuous input excluded.",
          ha="center", fontsize=9.5, color="0.25")
 fig.tight_layout()

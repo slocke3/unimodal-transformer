@@ -7,6 +7,12 @@ every input representation in the tokenisation sweep. Output is pinned at 64
 bins throughout, so the columns differ only in what the model sees, and their
 cross-entropies share one support and can be read against each other.
 
+For the square-loss arms there is no output binning at all: the head is a single
+scalar and the target is the exact next state, the same real number for every
+arm. --n_bins_out is passed to those runs but is inert -- parameter counts and
+targets are identical whatever it is set to -- so they are output-matched in a
+stronger sense than the cross-entropy arms, not a weaker one.
+
 Two figures, because the sweep has two halves:
   _ce   cross-entropy in nats for the CE-trained arms, fixed-step against
         early-stopped, exactly the axes of the original.
@@ -107,7 +113,7 @@ def grid(kind, fname):
            "dotted: what a model that learnt nothing gets -- uniform over 64 bins, "
            "or the constant $x=1/2$")
     fig.suptitle("Controlled task diversity by input resolution   |   total trajectories "
-                 f"fixed at 32000, output fixed at 64 bins   |   {lab}",
+                 f"fixed at 32000, output held identical across arms   |   {lab}",
                  fontsize=12.5, y=1.005)
     fig.tight_layout()
     for e in ("png", "pdf"):
@@ -164,7 +170,7 @@ def overlay(fname="taskdiv_overlay"):
     axes[1, 0].legend(frameon=False, fontsize=9.5, ncol=2, loc="lower left",
                       title="input bins", title_fontsize=9.5)
     fig.text(0.5, -0.035,
-             "Output pinned at 64 bins and total trajectories at 32000 throughout, so only the input resolution "
+             "Output held identical across arms and total trajectories at 32000 throughout, so only the input resolution "
              "changes.  Fixed-step checkpoint.\nDotted: what a model that learnt nothing achieves.  "
              "Continuous input is excluded -- it is a different inductive bias, not the fine end of this ladder.",
              ha="center", fontsize=9.5, color="0.25")
