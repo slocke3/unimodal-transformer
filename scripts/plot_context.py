@@ -114,6 +114,54 @@ fig2.tight_layout()
 for e in ("png", "pdf"):
     fig2.savefig(f"figures_taskdiv/context_trained.{e}", dpi=170, bbox_inches="tight")
 print("wrote figures_taskdiv/context_trained.png")
+
+# ---- the task-diversity panel proper, coloured BY context length -----------
+# Exactly the square-loss column of taskdiv_overlay_converged -- task count on x,
+# two rows -- with context length taking the place of input bins as the series.
+LM = np.log10(MS)
+
+
+def mstar(c, min_drop=2.0):
+    c = np.asarray(c); pl = c[-2:].mean(); drop = c[0] / pl
+    if drop < min_drop:
+        return None, drop
+    h = np.sqrt(c[0] * pl)
+    for i in range(len(c) - 1):
+        if c[i] >= h >= c[i + 1]:
+            f = (np.log(c[i]) - np.log(h)) / (np.log(c[i]) - np.log(c[i + 1]))
+            return 10 ** (LM[i] + f * (LM[i + 1] - LM[i])), drop
+    return None, drop
+
+
+ccols = [plt.get_cmap("viridis")(v) for v in np.linspace(0.12, 0.88, len(CTX))]
+fig3, ax3 = plt.subplots(2, 1, figsize=(7.2, 8.2), sharex=True)
+for i, (key, lab) in enumerate(
+        (("rms_at_train_r", "Seen tasks\n(evaluated at training $r$)"),
+         ("rms_per_r", "New tasks\n(full-range grid)"))):
+    a = ax3[i]
+    for L, c in zip(CTX, ccols):
+        y = [trained(L, m, key) for m in MS]
+        a.plot(MS, y, "o-", color=c, ms=6, lw=1.7, label=str(L))
+        if i == 1:
+            mm, dd = mstar(y)
+            print("  L=%-3d m* = %-8s drop %6.1fx" %
+                  (L, "none" if mm is None else "%.0f" % mm, dd))
+    a.set_xscale("log"); a.set_yscale("log"); a.grid(alpha=0.25, lw=0.5)
+    a.set_ylabel(lab + "\nMean squared error", fontsize=10)
+    for sp in ("top", "right"):
+        a.spines[sp].set_visible(False)
+ax3[1].set_xlabel("number of training tasks (distinct $r$ values)")
+ax3[0].legend(frameon=False, fontsize=9.5, ncol=2, loc="lower left",
+              title="context length", title_fontsize=9.5)
+fig3.text(0.5, -0.035,
+          "Square loss, 64 input bins, 64-bin output, 320k steps, 32000 trajectories, one model per context length.\n"
+          "traj_len = context_len + 100 throughout, so every arm keeps 99 windows per trajectory and the same pool.",
+          ha="center", fontsize=9.5, color="0.25")
+fig3.tight_layout()
+for e in ("png", "pdf"):
+    fig3.savefig(f"figures_taskdiv/taskdiv_by_context.{e}", dpi=170,
+                 bbox_inches="tight")
+print("wrote figures_taskdiv/taskdiv_by_context.png")
 print("\nseen-task MSE, trained at that length:")
 print("%7s %s" % ("m", " ".join("L=%-9d" % L for L in CTX)))
 for m in MS:
