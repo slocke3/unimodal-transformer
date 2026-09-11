@@ -85,6 +85,40 @@ fig.text(0.5, -0.035, note, ha="center", fontsize=9.5, color="0.25")
 fig.tight_layout()
 for e in ("png", "pdf"):
     fig.savefig(f"figures_taskdiv/context.{e}", dpi=170, bbox_inches="tight")
+
+# ---- trained-at-length only, in the form of the task-diversity panel --------
+# Same two rows and same square-loss axis as taskdiv_overlay_converged, with
+# context length on x in place of task count. Linear in L: the ladder is
+# 10-75 and a log axis would compress the top, where the curves separate.
+fig2, ax2 = plt.subplots(2, 1, figsize=(7.2, 8.2), sharex=True)
+for i, (key, lab) in enumerate(
+        (("rms_at_train_r", "Seen tasks\n(evaluated at training $r$)"),
+         ("rms_per_r", "New tasks\n(full-range grid)"))):
+    a = ax2[i]
+    for m, c in zip(MS, cols):
+        a.plot(CTX, [trained(L, m, key) for L in CTX], "o-", color=c, ms=6,
+               lw=1.7, label=str(m))
+    a.set_yscale("log"); a.grid(alpha=0.25, lw=0.5)
+    a.set_xlim(5, 80); a.set_xticks(CTX)
+    a.set_ylabel(lab + "\nMean squared error", fontsize=10)
+    for sp in ("top", "right"):
+        a.spines[sp].set_visible(False)
+ax2[1].set_xlabel("context length")
+ax2[0].legend(frameon=False, fontsize=9, ncol=2, loc="lower left",
+              title="training tasks $m$", title_fontsize=9)
+fig2.text(0.5, -0.035,
+          "Square loss, 64 input bins, 64-bin output, 320k steps, 32000 trajectories, one model trained per context.\n"
+          "traj_len = context_len + 100 throughout, so every arm keeps 99 windows per trajectory and the same pool.",
+          ha="center", fontsize=9.5, color="0.25")
+fig2.tight_layout()
+for e in ("png", "pdf"):
+    fig2.savefig(f"figures_taskdiv/context_trained.{e}", dpi=170, bbox_inches="tight")
+print("wrote figures_taskdiv/context_trained.png")
+print("\nseen-task MSE, trained at that length:")
+print("%7s %s" % ("m", " ".join("L=%-9d" % L for L in CTX)))
+for m in MS:
+    print("%7d %s" % (m, " ".join("%-11.2e" % trained(L, m, "rms_at_train_r")
+                                  for L in CTX)))
 print("wrote figures_taskdiv/context.png")
 print("\nnew-task MSE, trained at that length:")
 print("%7s %s" % ("m", " ".join("L=%-9d" % L for L in CTX)))
