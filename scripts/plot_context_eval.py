@@ -43,24 +43,27 @@ for m, c in zip(MS, [cmap(v) for v in np.linspace(0.12, 0.88, len(MS))]):
 
 full = np.mean([np.nanmean(z[f"in64_mse_m{m}_seed0_L50_rms_new"]) ** 2 for m in MS])
 ax.axhline(full, color="0.55", lw=1, ls=":")
-ax.text(1.05, full * 1.35, "full 50-step context", fontsize=9.5, color="0.4")
+ax.text(0.7, full * 1.35, "full 50-step context", fontsize=9.5, color="0.4")
 
-ax.set_xscale("log"); ax.set_yscale("log")
-ax.set_xticks([1, 2, 3, 5, 8, 12, 20, 30, 40, 50])
-ax.set_xticklabels(["1", "2", "3", "5", "8", "12", "20", "30", "40", "50"],
-                   fontsize=9.5)
+# Linear in L, not log. The structure worth seeing is the collapse between
+# L=30 and L=50; on a log axis that is the last 13% of the width while the
+# featureless plateau from 2 to 20 takes 59% of it.
+ax.set_yscale("log")
+ax.set_xlim(0, 52)
+ax.set_xticks([0, 10, 20, 30, 40, 50])
 ax.set_xlabel("context positions the model is allowed to attend to")
 ax.set_ylabel("mean squared error, new tasks")
 ax.legend(frameon=False, fontsize=9.5, ncol=2, loc="lower left",
           title="training tasks $m$", title_fontsize=9.5)
+ax.axvspan(30, 50, color="0.92", zorder=0)
 ax.grid(alpha=0.25, lw=0.5)
 for s in ("top", "right"):
     ax.spines[s].set_visible(False)
 
 fig.text(0.5, -0.05,
          "Models trained at context 50 (square loss, 64 input bins, 320k steps), evaluated with attention\n"
-         "masked to the last $L$ positions. Error barely moves from $L=2$ to $L=30$, then falls two orders\n"
-         "of magnitude over the final twenty — the model needs nearly its whole trained window to engage.",
+         "masked to the last $L$ positions. Error barely moves from $L=2$ to $L=20$, then falls two orders\n"
+         "of magnitude over the shaded final twenty — the model needs nearly its whole trained window to engage.",
          ha="center", fontsize=9.5, color="0.25")
 fig.tight_layout()
 for e in ("png", "pdf"):
