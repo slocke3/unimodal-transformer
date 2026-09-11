@@ -107,6 +107,10 @@ def main():
                    help="split each input bin into this many interchangeable "
                         "tokens, inflating the vocabulary without changing the "
                         "information, the sequence length or the output space")
+    p.add_argument("--noise_bins", type=int, default=0,
+                   help="add uniform input noise of half-width 1/(2*noise_bins), "
+                        "i.e. exactly the error distribution of quantising to "
+                        "that many bins; continuous input only, 0 disables")
     p.add_argument("--input_mode", choices=["bins", "continuous"], default="bins")
     p.add_argument("--output_mode", choices=["bins", "scalar"], default="bins")
     p.add_argument("--traj_len", type=int, default=150)
@@ -180,9 +184,10 @@ def main():
 
     n_in = args.n_bins if args.n_bins_in is None else args.n_bins_in
     n_out = args.n_bins if args.n_bins_out is None else args.n_bins_out
+    noise = 0.0 if args.noise_bins <= 0 else 0.5 / args.noise_bins
     modes = dict(input_mode=args.input_mode, n_bins_in=n_in,
                  n_bins_out=n_out, output_mode=args.output_mode,
-                 synonyms=args.synonyms)
+                 synonyms=args.synonyms, input_noise=noise)
 
     torch.manual_seed(args.seed)
     if torch.cuda.is_available():
@@ -334,7 +339,8 @@ def main():
              acc_at_train_r=acc_at_train_r,
              rms_per_r=rms_per_r, rms_at_train_r=rms_at_train_r,
              n_bins_in=n_in, n_bins_out=n_out, input_mode=args.input_mode,
-             output_mode=args.output_mode, synonyms=args.synonyms, **extra)
+             output_mode=args.output_mode, synonyms=args.synonyms,
+             noise_bins=args.noise_bins, input_noise=noise, **extra)
     plot_position_histogram_overlap(
         train_token_hist, eval_token_hist, n_in,
         save_path=os.path.join(args.out_dir, "position_hist_overlap.png"),

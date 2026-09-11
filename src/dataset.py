@@ -18,7 +18,7 @@ class DiscreteMapDataset(Dataset):
                  context_len=50, burn_in=0, traj_len=200,
                  n_bins=64, seed=0, r_values=None,
                  input_mode="bins", n_bins_in=None, n_bins_out=None,
-                 output_mode="bins", synonyms=1):
+                 output_mode="bins", synonyms=1, input_noise=0.0):
         """input_mode "continuous" hands the model raw x instead of bin indices;
         output_mode "scalar" makes the target the raw next x for a square loss.
         n_bins_in / n_bins_out default to n_bins, which reproduces the original
@@ -81,8 +81,14 @@ class DiscreteMapDataset(Dataset):
                           minlength=n_bins_in)[:n_bins_in]
         ).astype(np.int64)
 
+        self.input_noise = input_noise
         if input_mode == "continuous":
-            self.contexts = torch.tensor(raw_ctx, dtype=torch.float32)
+            noisy = raw_ctx
+            if input_noise > 0:
+                assert input_mode == "continuous", "noise applies to raw x only"
+                noisy = raw_ctx + rng.uniform(-input_noise, input_noise,
+                                              size=raw_ctx.shape)
+            self.contexts = torch.tensor(noisy, dtype=torch.float32)
         else:
             self.contexts = torch.tensor(contexts, dtype=torch.long)
         if output_mode == "scalar":

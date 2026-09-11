@@ -30,7 +30,7 @@ def evaluate_per_r(model, r_grid, device, context_len, n_bins,
                    burn_in=0, n_eval_per_r=30, traj_len=150, seed=99,
                    return_histograms=False, input_mode="bins", n_bins_in=None,
                    n_bins_out=None, output_mode="bins", return_rms=False,
-                   synonyms=1):
+                   synonyms=1, input_noise=0.0, attend_last=None):
     """
     Compute mean cross-entropy and top-1 accuracy per r value.
     When return_histograms=True, also return token-exposure counts with shape
@@ -82,7 +82,11 @@ def evaluate_per_r(model, r_grid, device, context_len, n_bins,
             )
 
         if input_mode == "continuous":
-            ctx = torch.tensor(raw_ctx, dtype=torch.float32).to(device)
+            noisy = raw_ctx
+            if input_noise > 0:
+                noisy = raw_ctx + rng.uniform(-input_noise, input_noise,
+                                              size=raw_ctx.shape)
+            ctx = torch.tensor(noisy, dtype=torch.float32).to(device)
         else:
             tok = ctx_tok
             if synonyms > 1:
@@ -91,7 +95,7 @@ def evaluate_per_r(model, r_grid, device, context_len, n_bins,
         truth = torch.tensor(raw_tgt, dtype=torch.float32).to(device)
 
         with torch.no_grad():
-            out = model(ctx)
+            out = model(ctx) if attend_last is None else model(ctx, attend_last=attend_last)
             if output_mode == "scalar":
                 pred = out
             else:

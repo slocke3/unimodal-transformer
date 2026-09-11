@@ -3,6 +3,29 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+def _restricted_mask(seq_len, attend_last, device):
+    """Causal mask that additionally hides everything before the last L' steps.
+
+    Truncating a sequence to evaluate a shorter context would move the prediction
+    from position seq_len-1 to position L'-1. These models are trained to predict
+    at the final position only, with learned positional embeddings, so that
+    measures how well the model copes with an unfamiliar position as much as how
+    much context it needs. Masking instead keeps the query at its trained
+    position and its positional embedding intact, and removes only the older keys.
+
+    Columns before seq_len - attend_last are hidden from every row, so nothing
+    from before the window can enter at any layer. The diagonal is always left
+    open: rows inside the hidden region would otherwise have no visible key at
+    all and produce NaN, and their outputs cannot leak, since they are hidden as
+    keys from every later row anyway.
+    """
+    idx = torch.arange(seq_len, device=device)
+    mask = idx[None, :] > idx[:, None]                      # causal
+    mask |= idx[None, :] < (seq_len - attend_last)          # too old
+    mask.fill_diagonal_(False)
+    return mask
+
+
 class LearnedPositionalEmbedding(nn.Module):
     def __init__(self, max_len, d_model):
         super().__init__()
@@ -66,11 +89,17 @@ class DiscreteTrajectoryTransformer(nn.Module):
                 nn.init.xavier_uniform_(p)
         nn.init.zeros_(self.output_head.bias)
 
-    def forward(self, x):
+    def forward(self, x, attend_last=None):
         batch_size, seq_len = x.shape
         h = self.token_embed(x)
         h = self.pos_embedding(h)
-        h = self.transformer(h, mask=self.causal_mask[:seq_len, :seq_len], is_causal=True)
+        if attend_last is None:
+            h = self.transformer(h, mask=self.causal_mask[:seq_len, :seq_len],
+                                 is_causal=True)
+        else:
+            h = self.transformer(h, mask=_restricted_mask(seq_len, attend_last,
+                                                          x.device),
+                                 is_causal=False)
         out = self.output_head(h[:, -1, :])
         return out.squeeze(-1) if self.output_mode == "scalar" else out
 
@@ -167,12 +196,16 @@ class ContinuousTrajectoryTransformer(nn.Module):
                 nn.init.xavier_uniform_(p)
         nn.init.zeros_(self.output_head.bias)
 
-    def forward(self, x, all_positions=False):
+    def forward(self, x, all_positions=False, attend_last=None):
         """x: (batch, seq) float in [0,1]."""
         h = self.input_proj((2.0 * x - 1.0).unsqueeze(-1))
         h = self.pos_embedding(h)
         s = x.shape[1]
-        h = self.transformer(h, mask=self.causal_mask[:s, :s], is_causal=True)
+        if attend_last is None:
+            h = self.transformer(h, mask=self.causal_mask[:s, :s], is_causal=True)
+        else:
+            h = self.transformer(h, mask=_restricted_mask(s, attend_last, x.device),
+                                 is_causal=False)
         out = self.output_head(h if all_positions else h[:, -1:, :])
         if self.output_mode == "scalar":
             out = out.squeeze(-1)
