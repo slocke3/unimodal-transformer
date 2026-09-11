@@ -134,28 +134,38 @@ def mstar(c, min_drop=2.0):
 
 
 ccols = [plt.get_cmap("viridis")(v) for v in np.linspace(0.12, 0.88, len(CTX))]
-fig3, ax3 = plt.subplots(2, 1, figsize=(7.2, 8.2), sharex=True)
-for i, (key, lab) in enumerate(
-        (("rms_at_train_r", "Seen tasks\n(evaluated at training $r$)"),
-         ("rms_per_r", "New tasks\n(full-range grid)"))):
-    a = ax3[i]
-    for L, c in zip(CTX, ccols):
-        y = [trained(L, m, key) for m in MS]
-        a.plot(MS, y, "o-", color=c, ms=6, lw=1.7, label=str(L))
-        if i == 1:
-            mm, dd = mstar(y)
-            print("  L=%-3d m* = %-8s drop %6.1fx" %
-                  (L, "none" if mm is None else "%.0f" % mm, dd))
-    a.set_xscale("log"); a.set_yscale("log"); a.grid(alpha=0.25, lw=0.5)
-    a.set_ylabel(lab + "\nMean squared error", fontsize=10)
-    for sp in ("top", "right"):
-        a.spines[sp].set_visible(False)
-ax3[1].set_xlabel("number of training tasks (distinct $r$ values)")
-ax3[0].legend(frameon=False, fontsize=9.5, ncol=2, loc="lower left",
-              title="context length", title_fontsize=9.5)
-fig3.text(0.5, -0.035,
+fig3, ax3 = plt.subplots(figsize=(7.6, 6.0))
+# One panel, both rows on a single axis. Splitting them into stacked panels let
+# each autoscale, which flattered the seen-task row: on a shared scale its whole
+# range is a sliver, and that is the finding -- context length barely moves
+# performance on tasks the model trained on, while it moves new-task error by
+# three orders of magnitude at low diversity.
+for L, c in zip(CTX, ccols):
+    ax3.plot(MS, [trained(L, m, "rms_per_r") for m in MS], "o-", color=c,
+             ms=6, lw=1.8, label=str(L))
+    ax3.plot(MS, [trained(L, m, "rms_at_train_r") for m in MS], "--", color=c,
+             lw=1.4, alpha=0.85)
+    mm, dd = mstar([trained(L, m, "rms_per_r") for m in MS])
+    print("  L=%-3d m* = %-8s drop %6.1fx" %
+          (L, "none" if mm is None else "%.0f" % mm, dd))
+ax3.set_xscale("log"); ax3.set_yscale("log"); ax3.grid(alpha=0.25, lw=0.5)
+ax3.set_xlabel("number of training tasks (distinct $r$ values)")
+ax3.set_ylabel("mean squared error")
+# keep clear of the dashed band along the bottom; the mid-right is empty once
+# every curve has converged
+leg1 = ax3.legend(frameon=False, fontsize=9.5, ncol=2, loc="center right",
+                  bbox_to_anchor=(1.0, 0.52),
+                  title="context length", title_fontsize=9.5)
+ax3.add_artist(leg1)
+h = [plt.Line2D([], [], color="k", lw=1.8, marker="o", ms=6),
+     plt.Line2D([], [], color="k", lw=1.4, ls="--")]
+ax3.legend(h, ["new tasks (full-range grid)", "seen tasks (at training $r$)"],
+           frameon=False, fontsize=9.5, loc="upper right")
+for sp in ("top", "right"):
+    ax3.spines[sp].set_visible(False)
+fig3.text(0.5, -0.05,
           "Square loss against the exact next state, 64 input bins, 320k steps, 32000 trajectories, one model per context length.\n"
-          "traj_len = context_len + 100 throughout, so every arm keeps 100 windows per trajectory and the same pool.",
+          "traj_len = context_len + 100 throughout, so every arm keeps 100 windows per trajectory and the same 3.2M pool.",
           ha="center", fontsize=9.5, color="0.25")
 fig3.tight_layout()
 for e in ("png", "pdf"):
