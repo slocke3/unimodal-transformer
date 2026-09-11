@@ -4,7 +4,7 @@ Two ways of varying context, on one axis:
 
   trained at that length (solid)   -- runs_ctx, one model per context, plus the
       existing 320k in64_mse arm as the L=50 point. traj_len = context_len + 100
-      throughout, so every arm has 99 windows per trajectory and the same 3.168M
+      throughout, so every arm has 100 windows per trajectory and the same 3.2M
       window pool; otherwise a shorter context would quietly draw a larger pool
       from the same trajectories.
 
@@ -108,7 +108,7 @@ ax2[0].legend(frameon=False, fontsize=9, ncol=2, loc="lower left",
               title="training tasks $m$", title_fontsize=9)
 fig2.text(0.5, -0.035,
           "Square loss against the exact next state, 64 input bins, 320k steps, 32000 trajectories, one model per context.\n"
-          "traj_len = context_len + 100 throughout, so every arm keeps 99 windows per trajectory and the same pool.",
+          "traj_len = context_len + 100 throughout, so every arm keeps 100 windows per trajectory and the same pool.",
           ha="center", fontsize=9.5, color="0.25")
 fig2.tight_layout()
 for e in ("png", "pdf"):
@@ -155,7 +155,7 @@ ax3[0].legend(frameon=False, fontsize=9.5, ncol=2, loc="lower left",
               title="context length", title_fontsize=9.5)
 fig3.text(0.5, -0.035,
           "Square loss against the exact next state, 64 input bins, 320k steps, 32000 trajectories, one model per context length.\n"
-          "traj_len = context_len + 100 throughout, so every arm keeps 99 windows per trajectory and the same pool.",
+          "traj_len = context_len + 100 throughout, so every arm keeps 100 windows per trajectory and the same pool.",
           ha="center", fontsize=9.5, color="0.25")
 fig3.tight_layout()
 for e in ("png", "pdf"):
