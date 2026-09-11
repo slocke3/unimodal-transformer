@@ -28,6 +28,13 @@ def main():
     ap.add_argument("--contexts", type=int, nargs="+",
                     default=[1, 2, 3, 5, 8, 12, 20, 30, 40, 50])
     ap.add_argument("--n_eval_per_r", type=int, default=30)
+    ap.add_argument("--r_stride", type=int, default=1,
+                    help="evaluate every Nth r value. The curve is an aggregate "
+                         "over the grid, so a coarser grid costs only estimator "
+                         "noise, and the cost here is dominated by forward "
+                         "passes: attend_last hands the encoder an explicit "
+                         "non-causal mask, which disables the fused attention "
+                         "kernel and runs 2.6x slower than the plain causal path")
     ap.add_argument("--ckpt", default="best_final.pt")
     ap.add_argument("--out", default="figures_taskdiv/eval_context.npz")
     a = ap.parse_args()
@@ -108,10 +115,10 @@ def main():
             "this path reports MSE directly; binned output would need the " \
             "softmax-mean implied map instead"
         tag = os.path.basename(d)
-        new = eval_all_contexts(model, z["r_grid"], p, modes, p["seed"] + 7,
-                                a.contexts)
-        seen = eval_all_contexts(model, z["seen_r"], p, modes, p["seed"] + 13,
-                                 a.contexts)
+        new = eval_all_contexts(model, z["r_grid"][::a.r_stride], p, modes,
+                                p["seed"] + 7, a.contexts)
+        seen = eval_all_contexts(model, z["seen_r"][::a.r_stride], p, modes,
+                                 p["seed"] + 13, a.contexts)
         for L in a.contexts:
             out[f"{tag}_L{L}_mse_new"] = new[L]
             out[f"{tag}_L{L}_mse_seen"] = seen[L]
