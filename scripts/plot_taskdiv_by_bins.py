@@ -30,7 +30,11 @@ COLS = [("in8", "8 bins"), ("in16", "16 bins"), ("in32", "32 bins"),
 ORANGE, NAVY = "#d1502e", "#1f3352"
 
 
-def load(itag, otag, key):
+def load(itag, otag, key, square=False):
+    """square=True averages the SQUARED per-r error, which is the mean squared
+    error over the grid. Averaging the per-r RMS and squaring afterwards is a
+    different and smaller quantity by Jensen -- between 1.5x and 9x smaller here,
+    and by an amount that varies with the arm, so it distorts curve shapes."""
     out = []
     for m in MS:
         p = (f"runs_div_controlled/div_m{m}_seed0/eval_per_r.npz"
@@ -85,7 +89,7 @@ def grid(kind, fname):
                           (f"rms_{row_key}", "mse", NAVY, "s", "white", 2.0,
                            "Square loss (MSE)"))
             for key, otag, col, mk, mfc, power, lab in series:
-                ax.plot(MS, load(itag, otag, key) ** power, mk + "-", color=col,
+                ax.plot(MS, load(itag, otag, key, square=(power == 2.0)), mk + "-", color=col,
                         mfc=mfc, ms=5, lw=1.4, label=lab)
             ax.set_xscale("log"); ax.set_yscale("log")
             if i == 0:
@@ -140,7 +144,7 @@ def overlay(fname="taskdiv_overlay"):
             ax.axhline(ref[otag], color="0.55", lw=1, ls=":")
             key = ("ce_" if otag == "bins" else "rms_") + row_key
             for (itag, nb), c in zip(bins, cols):
-                ax.plot(MS, load(itag, otag, key) ** power, "o-", color=c,
+                ax.plot(MS, load(itag, otag, key, square=(power == 2.0)), "o-", color=c,
                         ms=5, lw=1.6, label=str(nb))
             ax.set_xscale("log"); ax.set_yscale("log")
             ax.grid(alpha=0.25, lw=0.5)

@@ -33,9 +33,46 @@ def main():
     a = ap.parse_args()
 
     import torch
+    import torch.nn as nn
     from src.model import (DiscreteTrajectoryTransformer,
                            ContinuousTrajectoryTransformer)
-    from src.evaluation import evaluate_per_r
+    from src.maps import iterate_map, tokenize_trajectory
+
+    def eval_all_contexts(model, r_grid, p, modes, seed, contexts):
+        """Every context on one pass of the data.
+
+        The first version of this called evaluate_per_r once per (model,
+        context) pair, which regenerated the whole trajectory set each time --
+        twenty contexts meant twenty identical generations, and the job timed
+        out. The data does not depend on the context, so it is built once per r
+        and every context is then just another forward pass over it.
+        """
+        L = p["context_len"]
+        n_in = modes["n_bins_in"]
+        rng = np.random.default_rng(seed)
+        mse = {c: np.empty(len(r_grid)) for c in contexts}
+        for i, r in enumerate(r_grid):
+            rc, rt = [], []
+            for _ in range(a.n_eval_per_r):
+                traj = iterate_map(rng.uniform(0.05, 0.95),
+                                   r, p.get("burn_in", 0) + p["traj_len"])
+                for t in range(len(traj) - (L + 1)):
+                    rc.append(traj[t:t + L]); rt.append(traj[t + L])
+            rc = np.asarray(rc, dtype=np.float64)
+            truth = torch.tensor(np.asarray(rt), dtype=torch.float32, device=dev)
+            if modes["input_mode"] == "continuous":
+                ctx = torch.tensor(rc, dtype=torch.float32, device=dev)
+            else:
+                tok = tokenize_trajectory(rc, n_in)
+                if modes["synonyms"] > 1:
+                    tok = tok * modes["synonyms"] + rng.integers(
+                        0, modes["synonyms"], size=tok.shape)
+                ctx = torch.tensor(tok, dtype=torch.long, device=dev)
+            with torch.no_grad():
+                for c in contexts:
+                    pred = model(ctx, attend_last=c)
+                    mse[c][i] = ((pred - truth) ** 2).mean().item()
+        return mse
 
     dirs = sorted({d for pat in a.runs for d in glob.glob(pat)})
     dev = "cuda" if torch.cuda.is_available() else "cpu"
@@ -67,20 +104,23 @@ def main():
         model.load_state_dict(torch.load(os.path.join(d, a.ckpt),
                                          map_location=dev,
                                          weights_only=True)["model_state_dict"])
+        assert modes["output_mode"] == "scalar", \
+            "this path reports MSE directly; binned output would need the " \
+            "softmax-mean implied map instead"
         tag = os.path.basename(d)
+        new = eval_all_contexts(model, z["r_grid"], p, modes, p["seed"] + 7,
+                                a.contexts)
+        seen = eval_all_contexts(model, z["seen_r"], p, modes, p["seed"] + 13,
+                                 a.contexts)
         for L in a.contexts:
-            kw = dict(model=model, device=dev, context_len=p["context_len"],
-                      n_bins=p["n_bins"], burn_in=p.get("burn_in", 0),
-                      n_eval_per_r=a.n_eval_per_r, traj_len=p["traj_len"],
-                      return_rms=True, attend_last=L, **modes)
-            ce, _, rms = evaluate_per_r(r_grid=z["r_grid"], seed=p["seed"] + 7, **kw)
-            ce_s, _, rms_s = evaluate_per_r(r_grid=z["seen_r"],
-                                            seed=p["seed"] + 13, **kw)
-            for k, v in (("ce_new", ce), ("rms_new", rms),
-                         ("ce_seen", ce_s), ("rms_seen", rms_s)):
-                out[f"{tag}_L{L}_{k}"] = v
-            print(f"  {tag:28s} L={L:3d}  new RMS {np.nanmean(rms):.6f}  "
-                  f"seen RMS {np.nanmean(rms_s):.6f}", flush=True)
+            out[f"{tag}_L{L}_mse_new"] = new[L]
+            out[f"{tag}_L{L}_mse_seen"] = seen[L]
+            # also under the old names, as per-r RMS, so existing readers keep
+            # working; they must square BEFORE averaging over r, not after
+            out[f"{tag}_L{L}_rms_new"] = np.sqrt(new[L])
+            out[f"{tag}_L{L}_rms_seen"] = np.sqrt(seen[L])
+            print(f"  {tag:28s} L={L:3d}  new MSE {np.nanmean(new[L]):.3e}  "
+                  f"seen MSE {np.nanmean(seen[L]):.3e}", flush=True)
         out[f"{tag}_m"] = np.array(p["m"])
     os.makedirs(os.path.dirname(a.out), exist_ok=True)
     np.savez(a.out, **out)

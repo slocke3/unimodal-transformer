@@ -35,7 +35,9 @@ def trained(L, m, key):
     f = p + "/eval_per_r.npz"
     if not glob.glob(f):
         return np.nan
-    return float(np.nanmean(np.load(f)[key])) ** 2          # rms -> mse
+    # mean of the SQUARED per-r error: the mean squared error over the grid.
+    # Averaging per-r RMS then squaring is smaller by Jensen and arm-dependent.
+    return float(np.nanmean(np.load(f)[key] ** 2))
 
 
 z = np.load("figures_taskdiv/eval_context.npz")
@@ -57,7 +59,7 @@ for i, (key, rkey, lab) in enumerate(
         if i == 1:
             missing.extend(L for L, v in zip(CTX, y) if not np.isfinite(v))
         ax.plot(CTX, y, "o-", color=c, ms=6, lw=1.7, label=str(m))
-        yr = [np.nanmean(z[f"in64_mse_m{m}_seed0_L{L}_{rkey}"]) ** 2 for L in RL]
+        yr = [np.nanmean(z[f"in64_mse_m{m}_seed0_L{L}_{rkey}"] ** 2) for L in RL]
         ax.plot(RL, yr, "--", color=c, lw=1.2, alpha=0.75)
     ax.set_xscale("log"); ax.set_yscale("log")
     ax.set_xticks([1, 2, 5, 10, 25, 50, 75])

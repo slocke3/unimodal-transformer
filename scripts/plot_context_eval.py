@@ -25,8 +25,8 @@ z = np.load("figures_taskdiv/eval_context.npz")
 L = z["contexts"]
 
 # how different is the seen-task row, really?
-d = [abs(np.nanmean(z[f"in64_mse_m{m}_seed0_L{l}_rms_seen"]) ** 2
-         / np.nanmean(z[f"in64_mse_m{m}_seed0_L{l}_rms_new"]) ** 2 - 1)
+d = [abs(np.nanmean(z[f"in64_mse_m{m}_seed0_L{l}_rms_seen"] ** 2)
+         / np.nanmean(z[f"in64_mse_m{m}_seed0_L{l}_rms_new"] ** 2) - 1)
      for m in MS for l in L]
 print(f"seen vs new: median |ratio-1| = {100*np.median(d):.1f}%, "
       f"max = {100*max(d):.1f}%")
@@ -37,11 +37,11 @@ cmap = plt.get_cmap("viridis")
 fig, ax = plt.subplots(figsize=(7.4, 5.4))
 
 for m, c in zip(MS, [cmap(v) for v in np.linspace(0.12, 0.88, len(MS))]):
-    y = [np.nanmean(z[f"in64_mse_m{m}_seed0_L{l}_rms_new"]) ** 2 for l in L]
+    y = [np.nanmean(z[f"in64_mse_m{m}_seed0_L{l}_rms_new"] ** 2) for l in L]
     ax.plot(L, y, "o-", color=c, ms=5.5, lw=1.7, label=str(m))
     print(f"  m={m:5d}  " + "  ".join(f"{v:.2e}" for v in y))
 
-full = np.mean([np.nanmean(z[f"in64_mse_m{m}_seed0_L50_rms_new"]) ** 2 for m in MS])
+full = np.mean([np.nanmean(z[f"in64_mse_m{m}_seed0_L50_rms_new"] ** 2) for m in MS])
 ax.axhline(full, color="0.55", lw=1, ls=":")
 ax.text(0.7, full * 1.35, "full 50-step context", fontsize=9.5, color="0.4")
 

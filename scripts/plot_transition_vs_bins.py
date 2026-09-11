@@ -32,12 +32,15 @@ LM = np.log10(MS)
 
 
 def curve(itag, otag):
+    """Grid RMS as sqrt(mean of the squared per-r error). The plain mean of per-r
+    RMS is a different quantity, smaller by Jensen and by an arm-dependent
+    amount, so it distorts where the half-drop point lands."""
     out = []
     for m in MS:
         p = (f"runs_div_controlled/div_m{m}_seed0/eval_per_r.npz"
              if itag == "in64" and otag == "bins" else
              f"runs_divbins/{itag}_{otag}_m{m}_seed0/eval_per_r.npz")
-        out.append(float(np.nanmean(np.load(p)["rms_per_r"])))
+        out.append(float(np.sqrt(np.nanmean(np.load(p)["rms_per_r"] ** 2))))
     return np.array(out)
 
 

@@ -32,9 +32,15 @@ ARMS = [("in8", 8, "runs_divbins/in8_{o}_m{m}_seed0", 160),
 LM = np.log10(MS)
 
 
-def curve(tmpl, otag, key):
-    return np.array([float(np.nanmean(np.load(
-        tmpl.format(o=otag, m=m) + "/eval_per_r.npz")[key])) for m in MS])
+def curve(tmpl, otag, key, square=False):
+    """square=True averages the SQUARED per-r error -- the mean squared error
+    over the grid. Averaging per-r RMS and squaring afterwards is smaller by
+    Jensen, by a factor that varies across arms, so it distorts shapes."""
+    out = []
+    for m in MS:
+        v = np.load(tmpl.format(o=otag, m=m) + "/eval_per_r.npz")[key]
+        out.append(float(np.nanmean(v ** 2 if square else v)))
+    return np.array(out)
 
 
 def mstar(c, min_drop=2.0):
@@ -64,10 +70,11 @@ for j, (otag, ctitle, ylab, power) in enumerate(
              ("per_r", "New tasks\n(full-range grid)"))):
         ax = axes[i, j]
         for (tag, nb, tmpl, steps), c in zip(ARMS, cols):
-            y = curve(tmpl, otag, ("ce_" if otag == "bins" else "rms_") + row_key)
-            ax.plot(MS, y ** power, "o-", color=c, ms=5, lw=1.6, label=str(nb))
+            y = curve(tmpl, otag, ("ce_" if otag == "bins" else "rms_") + row_key,
+                      square=(power == 2.0))
+            ax.plot(MS, y, "o-", color=c, ms=5, lw=1.6, label=str(nb))
             if i == 1:
-                m, d = mstar(y ** power)
+                m, d = mstar(y)
                 print(f"  {nb:>4} bins ({steps}k)  m* = "
                       f"{'none' if m is None else f'{m:6.0f}'}   drop {d:5.1f}x")
         ax.set_xscale("log"); ax.set_yscale("log"); ax.grid(alpha=0.25, lw=0.5)
