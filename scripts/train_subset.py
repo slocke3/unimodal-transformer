@@ -114,6 +114,11 @@ def main():
                    help="add uniform input noise of half-width 1/(2*noise_bins), "
                         "i.e. exactly the error distribution of quantising to "
                         "that many bins; continuous input only, 0 disables")
+    p.add_argument("--all_positions", action="store_true",
+                   help="train on the prediction at every position of each "
+                        "window instead of the last one only. Validation and "
+                        "every evaluation still read the last position, so "
+                        "results stay directly comparable")
     p.add_argument("--input_mode", choices=["bins", "continuous"], default="bins")
     p.add_argument("--output_mode", choices=["bins", "scalar"], default="bins")
     p.add_argument("--traj_len", type=int, default=150)
@@ -213,7 +218,8 @@ def main():
     def loader(rvals, shuffle, seed):
         ds = DiscreteMapDataset(r_values=rvals, context_len=args.context_len,
                                 burn_in=args.burn_in, traj_len=args.traj_len,
-                                n_bins=args.n_bins, seed=seed, **modes)
+                                n_bins=args.n_bins, seed=seed,
+                                all_positions=args.all_positions, **modes)
         return DataLoader(ds, batch_size=args.batch_size, shuffle=shuffle,
                           num_workers=args.num_workers, pin_memory=True,
                           persistent_workers=args.num_workers > 0)
@@ -241,7 +247,7 @@ def main():
     trainer = Trainer(model, train_loader, val_loader, config=tcfg,
                       run_name="best",
                       criterion=nn.MSELoss() if args.output_mode == "scalar"
-                      else None)
+                      else None, all_positions=args.all_positions)
     mode = (f"fixed-step({args.max_steps})" if args.max_steps is not None
             else f"early-stop(max_epochs={args.max_epochs},patience={args.patience})")
     print(f"[train_subset] placement={args.placement} m={args.m} "

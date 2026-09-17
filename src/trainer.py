@@ -34,7 +34,8 @@ class TrainerConfig:
 
 class Trainer:
     def __init__(self, model, train_loader, val_loader,
-                 config=None, run_name="run", criterion=None):
+                 config=None, run_name="run", criterion=None,
+                 all_positions=False):
         self.config = config or TrainerConfig()
         self.device = self.config.resolve_device()
         self.run_name = run_name
@@ -54,6 +55,7 @@ class Trainer:
         # Square-loss arms pass nn.MSELoss(); the default keeps token models
         # on cross-entropy exactly as before.
         self.criterion = criterion if criterion is not None else nn.CrossEntropyLoss()
+        self.all_positions = all_positions
 
         self.train_losses = []
         self.val_losses = []
@@ -61,6 +63,28 @@ class Trainer:
         self.epochs_without_improvement = 0
         self.best_epoch = 0
         os.makedirs(self.config.save_dir, exist_ok=True)
+
+    def _loss(self, context, target, train):
+        """Training loss, and validation loss.
+
+        By default both score the final position only. With all_positions the
+        training loss averages over every position -- the forward pass computes
+        them all regardless, and the default discards all but one.
+
+        Validation still scores the final position alone, so val_losses and the
+        best-val checkpoint chosen from them mean what they meant in runs trained
+        on the last position, and the two can be compared directly. train_losses
+        are NOT comparable across the two: an average over positions includes
+        early ones that see almost no context and are harder.
+        """
+        if not self.all_positions:
+            return self.criterion(self.model(context), target)
+        if not train:
+            return self.criterion(self.model(context), target[:, -1])
+        out = self.model(context, all_positions=True)
+        if out.dim() == 3:                      # (batch, L, n_bins) logits
+            return self.criterion(out.reshape(-1, out.shape[-1]), target.reshape(-1))
+        return self.criterion(out, target)      # (batch, L) scalar predictions
 
     def _train_epoch(self, epoch):
         self.model.train()
@@ -72,7 +96,7 @@ class Trainer:
             target  = target.to(self.device)
 
             self.optimizer.zero_grad()
-            loss = self.criterion(self.model(context), target)
+            loss = self._loss(context, target, train=True)
             loss.backward()
 
             if self.config.grad_clip > 0:
@@ -95,7 +119,7 @@ class Trainer:
         for context, target, _ in loader:
             context = context.to(self.device)
             target  = target.to(self.device)
-            total_loss += self.criterion(self.model(context), target).item()
+            total_loss += self._loss(context, target, train=False).item()
             n_batches += 1
         return total_loss / n_batches
 
@@ -127,7 +151,7 @@ class Trainer:
                 context, target, _ = next(it)
             context, target = context.to(self.device), target.to(self.device)
             self.optimizer.zero_grad()
-            loss = self.criterion(self.model(context), target)
+            loss = self._loss(context, target, train=True)
             loss.backward()
             if self.config.grad_clip > 0:
                 nn.utils.clip_grad_norm_(self.model.parameters(), self.config.grad_clip)

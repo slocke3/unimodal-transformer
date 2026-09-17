@@ -18,11 +18,25 @@ class DiscreteMapDataset(Dataset):
                  context_len=50, burn_in=0, traj_len=200,
                  n_bins=64, seed=0, r_values=None,
                  input_mode="bins", n_bins_in=None, n_bins_out=None,
-                 output_mode="bins", synonyms=1, input_noise=0.0):
+                 output_mode="bins", synonyms=1, input_noise=0.0,
+                 all_positions=False):
         """input_mode "continuous" hands the model raw x instead of bin indices;
         output_mode "scalar" makes the target the raw next x for a square loss.
         n_bins_in / n_bins_out default to n_bins, which reproduces the original
-        behaviour exactly -- the tokeniser and window count are unchanged."""
+        behaviour exactly -- the tokeniser and window count are unchanged.
+
+        synonyms > 1 splits each input bin into that many interchangeable tokens,
+        one drawn at random per occurrence; the bin stays recoverable as
+        token // synonyms, so the vocabulary grows without adding information.
+
+        input_noise adds uniform noise on [-input_noise, +input_noise] to
+        continuous input, drawn once and baked in. At half a bin width it has the
+        error distribution of quantising to that many bins.
+
+        all_positions makes the target the window shifted by one step,
+        traj[t+1 : t+L+1], so position k is scored on the step after it. Its last
+        entry is exactly the single target of the default, so the data are
+        unchanged; only how much of each window is trained on differs."""
         super().__init__()
         assert input_mode in ("bins", "continuous")
         assert output_mode in ("bins", "scalar")
@@ -91,10 +105,26 @@ class DiscreteMapDataset(Dataset):
             self.contexts = torch.tensor(noisy, dtype=torch.float32)
         else:
             self.contexts = torch.tensor(contexts, dtype=torch.long)
-        if output_mode == "scalar":
-            self.targets = torch.tensor(raw_tgt, dtype=torch.float32)
+        self.all_positions = all_positions
+        if not all_positions:
+            if output_mode == "scalar":
+                self.targets = torch.tensor(raw_tgt, dtype=torch.float32)
+            else:
+                self.targets = torch.tensor(targets, dtype=torch.long)
+        elif output_mode == "scalar":
+            # filled in float32 directly; concatenating the float64 arrays first
+            # would transiently double a multi-gigabyte buffer at 3.2M windows
+            seq = np.empty((len(raw_tgt), context_len), dtype=np.float32)
+            seq[:, :-1] = raw_ctx[:, 1:]
+            seq[:, -1] = raw_tgt
+            self.targets = torch.from_numpy(seq)
         else:
-            self.targets = torch.tensor(targets, dtype=torch.long)
+            # tokenised from the float64 values, as the default path is, so bin
+            # edges are decided identically
+            seq = np.empty((len(raw_tgt), context_len), dtype=np.int64)
+            seq[:, :-1] = tokenize_trajectory(raw_ctx[:, 1:], n_bins_out)
+            seq[:, -1] = targets
+            self.targets = torch.from_numpy(seq)
         self.raw_targets = torch.tensor(raw_tgt, dtype=torch.float32)
         self.r_labels = torch.tensor(np.array(r_labels_list), dtype=torch.float32)
 

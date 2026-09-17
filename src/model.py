@@ -92,7 +92,11 @@ class DiscreteTrajectoryTransformer(nn.Module):
                 nn.init.xavier_uniform_(p)
         nn.init.zeros_(self.output_head.bias)
 
-    def forward(self, x, attend_last=None, pos_start=0):
+    def forward(self, x, attend_last=None, pos_start=0, all_positions=False):
+        """all_positions returns a prediction at every position, (batch, L, ...),
+        where position k predicts the step after it from steps 0..k only -- the
+        causal mask guarantees nothing later is visible. The default keeps the
+        final position alone, which is all that evaluation ever reads."""
         batch_size, seq_len = x.shape
         h = self.token_embed(x)
         h = self.pos_embedding(h, start=pos_start)
@@ -103,7 +107,7 @@ class DiscreteTrajectoryTransformer(nn.Module):
             h = self.transformer(h, mask=_restricted_mask(seq_len, attend_last,
                                                           x.device),
                                  is_causal=False)
-        out = self.output_head(h[:, -1, :])
+        out = self.output_head(h if all_positions else h[:, -1, :])
         return out.squeeze(-1) if self.output_mode == "scalar" else out
 
     @torch.no_grad()
