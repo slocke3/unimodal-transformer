@@ -31,9 +31,12 @@ class LearnedPositionalEmbedding(nn.Module):
         super().__init__()
         self.embedding = nn.Embedding(max_len, d_model)
 
-    def forward(self, x):
+    def forward(self, x, start=0):
+        """start offsets the positions, so a sequence holding only the LAST L'
+        steps of a trained window keeps the positional embeddings those steps
+        had in the full window: positions start .. start + L' - 1."""
         seq_len = x.size(1)
-        positions = torch.arange(seq_len, device=x.device)
+        positions = torch.arange(start, start + seq_len, device=x.device)
         return x + self.embedding(positions).unsqueeze(0)
 
 
@@ -89,10 +92,10 @@ class DiscreteTrajectoryTransformer(nn.Module):
                 nn.init.xavier_uniform_(p)
         nn.init.zeros_(self.output_head.bias)
 
-    def forward(self, x, attend_last=None):
+    def forward(self, x, attend_last=None, pos_start=0):
         batch_size, seq_len = x.shape
         h = self.token_embed(x)
-        h = self.pos_embedding(h)
+        h = self.pos_embedding(h, start=pos_start)
         if attend_last is None:
             h = self.transformer(h, mask=self.causal_mask[:seq_len, :seq_len],
                                  is_causal=True)
@@ -196,10 +199,10 @@ class ContinuousTrajectoryTransformer(nn.Module):
                 nn.init.xavier_uniform_(p)
         nn.init.zeros_(self.output_head.bias)
 
-    def forward(self, x, all_positions=False, attend_last=None):
+    def forward(self, x, all_positions=False, attend_last=None, pos_start=0):
         """x: (batch, seq) float in [0,1]."""
         h = self.input_proj((2.0 * x - 1.0).unsqueeze(-1))
-        h = self.pos_embedding(h)
+        h = self.pos_embedding(h, start=pos_start)
         s = x.shape[1]
         if attend_last is None:
             h = self.transformer(h, mask=self.causal_mask[:s, :s], is_causal=True)

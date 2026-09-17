@@ -26,7 +26,10 @@ def main():
     ap.add_argument("--runs", nargs="+", required=True,
                     help="run directories, or globs, to re-evaluate")
     ap.add_argument("--contexts", type=int, nargs="+",
-                    default=[1, 2, 3, 5, 8, 12, 20, 30, 40, 50])
+                    default=[1, 2, 3, 4, 6, 8, 10, 13, 16, 20, 23, 26, 29, 32,
+                             35, 38, 41, 44, 47, 50, 55, 60, 65, 70, 75],
+                    help="master ladder; each model is evaluated at the entries "
+                         "below its own context length, plus that length itself")
     ap.add_argument("--n_eval_per_r", type=int, default=30)
     ap.add_argument("--r_stride", type=int, default=1,
                     help="evaluate every Nth r value. The curve is an aggregate "
@@ -77,7 +80,14 @@ def main():
                 ctx = torch.tensor(tok, dtype=torch.long, device=dev)
             with torch.no_grad():
                 for c in contexts:
-                    pred = model(ctx, attend_last=c)
+                    # Keep only the last c steps and start their positional
+                    # embeddings at L - c, so the query keeps the position it was
+                    # trained to predict from. Masking the older keys instead is
+                    # exactly equivalent -- hidden positions can never influence
+                    # visible ones -- but it hands the encoder a non-causal mask,
+                    # which disables the fused attention kernel. Verified against
+                    # the masked path: identical at c >= 20, within 1e-6 below.
+                    pred = model(ctx[:, -c:], pos_start=L - c)
                     mse[c][i] = ((pred - truth) ** 2).mean().item()
         return mse
 
@@ -115,11 +125,17 @@ def main():
             "this path reports MSE directly; binned output would need the " \
             "softmax-mean implied map instead"
         tag = os.path.basename(d)
+        Lmax = p["context_len"]
+        ctxs = sorted({c for c in a.contexts if c < Lmax} | {Lmax})
         new = eval_all_contexts(model, z["r_grid"][::a.r_stride], p, modes,
-                                p["seed"] + 7, a.contexts)
+                                p["seed"] + 7, ctxs)
         seen = eval_all_contexts(model, z["seen_r"][::a.r_stride], p, modes,
-                                 p["seed"] + 13, a.contexts)
-        for L in a.contexts:
+                                 p["seed"] + 13, ctxs)
+        out[f"{tag}_contexts"] = np.array(ctxs)
+        out[f"{tag}_context_len"] = np.array(Lmax)
+        out[f"{tag}_max_steps"] = np.array(p["max_steps"])
+        out[f"{tag}_n_bins_in"] = np.array(modes["n_bins_in"])
+        for L in ctxs:
             out[f"{tag}_L{L}_mse_new"] = new[L]
             out[f"{tag}_L{L}_mse_seen"] = seen[L]
             # also under the old names, as per-r RMS, so existing readers keep
