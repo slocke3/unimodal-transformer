@@ -32,15 +32,18 @@ ARMS = [("in8", 8, "runs_divbins/in8_{o}_m{m}_seed0", 160),
 LM = np.log10(MS)
 
 
-def curve(tmpl, otag, key, square=False):
-    """square=True averages the SQUARED per-r error -- the mean squared error
-    over the grid. Averaging per-r RMS and squaring afterwards is smaller by
-    Jensen, by a factor that varies across arms, so it distorts shapes."""
-    out = []
-    for m in MS:
-        v = np.load(tmpl.format(o=otag, m=m) + "/eval_per_r.npz")[key]
-        out.append(float(np.nanmean(v ** 2 if square else v)))
-    return np.array(out)
+def curve(tmpl, otag, key, power=1.0):
+    """Aggregate a per-r array across r.
+
+    The stored scalar-arm arrays are per-r RMS values, so mean squared error is
+    mean(rms**2). Raising the AVERAGED rms to a power instead gives
+    (mean rms)**2, which is smaller by Var(rms) across r -- and since that
+    variance shrinks as the model becomes uniform across the family, the error
+    is not a constant factor but a distortion of the curve's shape.
+    """
+    return np.array([float(np.nanmean(np.load(
+        tmpl.format(o=otag, m=m) + "/eval_per_r.npz")[key] ** power))
+        for m in MS])
 
 
 def mstar(c, min_drop=2.0):
@@ -71,7 +74,7 @@ for j, (otag, ctitle, ylab, power) in enumerate(
         ax = axes[i, j]
         for (tag, nb, tmpl, steps), c in zip(ARMS, cols):
             y = curve(tmpl, otag, ("ce_" if otag == "bins" else "rms_") + row_key,
-                      square=(power == 2.0))
+                      power)
             ax.plot(MS, y, "o-", color=c, ms=5, lw=1.6, label=str(nb))
             if i == 1:
                 m, d = mstar(y)
