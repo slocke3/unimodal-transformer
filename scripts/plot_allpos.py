@@ -7,9 +7,13 @@ entry is the old target, and evaluation still reads the final position. So the
 two columns differ in the training loss and in nothing else: same data, same
 schedule, same 160k steps, same metric.
 
-Left is the original sweep (one seed), right the new one (five seeds, drawn
-individually with the median as a line). Rows share a y scale, so the columns are
-directly comparable.
+Left is the original sweep (one seed), right the new one (five seeds, median line
+with the full seed range shaded). Rows share a y scale, so the columns are
+directly comparable. A band is safe here in a way it was not for the 640k
+last-position sweep: there the seeds split near the threshold and shading merged
+two populations into one region, whereas here the spread stays under about 2x
+almost everywhere and peaks at 6x, so it really is a range rather than two
+branches.
 
 Two things change and they point opposite ways, which is why this is worth
 plotting rather than summarising. The transition stops depending on resolution:
@@ -58,10 +62,11 @@ for i, (key, row) in enumerate(((  "rms_at_train_r", "Seen tasks\n(evaluated at 
             else:
                 ys = np.array([mse(f"runs_divbins_allpos/in{b}_mse_m{{m}}_seed{s}", key)
                                for s in SEEDS])
-                for s in SEEDS:
-                    ax.plot(MS, ys[s], "o", color=cols[b], ms=3.5, alpha=0.5, lw=0)
+                ax.fill_between(MS, ys.min(0), ys.max(0), color=cols[b],
+                                alpha=0.25, lw=0)
                 y = np.median(ys, 0)
-                ax.plot(MS, y, "-", color=cols[b], lw=1.9, label=str(b))
+                ax.plot(MS, y, "o-", color=cols[b], ms=5.5, lw=1.7, label=str(b))
+                lo = min(lo, ys.min()); hi = max(hi, ys.max())
             lo, hi = min(lo, y.min()), max(hi, y.max())
         ax.set_xscale("log"); ax.set_yscale("log"); ax.grid(alpha=0.25, lw=0.5)
         if i == 0:
@@ -79,7 +84,7 @@ axes[1, 0].legend(frameon=False, fontsize=9.5, ncol=2, loc="lower left",
                   title="input bins", title_fontsize=9.5)
 fig.text(0.5, -0.035,
          "Square loss against the exact next state, 160k steps, 32000 trajectories, context 50 — identical either side; only the training\n"
-         "loss differs. Evaluation reads the final position in both. Right-hand points are the five seeds, line is their median.",
+         "loss differs. Evaluation reads the final position in both. Right-hand band spans the five seeds, line is their median.",
          ha="center", fontsize=9.5, color="0.25")
 fig.tight_layout()
 for e in ("png", "pdf"):
