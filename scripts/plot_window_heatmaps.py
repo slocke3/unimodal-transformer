@@ -1,4 +1,17 @@
-"""Heatmap and distance-summary view of the sliding-window sweep."""
+"""Heatmap and distance-summary view of the sliding-window sweep.
+
+--metric ce reads the cross-entropy of the binned-output runs; --metric mse reads
+the square-loss runs, whose stored arrays are per-r RMS, so mean squared error is
+rms**2.
+
+The two need different handling and not just a different label. log10(1 + x)
+suits cross-entropy, which is order 1 and additive in nats, but is useless for a
+mean squared error of order 1e-6, where it returns nearly zero everywhere; MSE is
+shown as log10 of itself with limits from percentiles. In the summary panel the
+excess over an in-window model is a difference in nats for cross-entropy and a
+ratio for MSE, since a difference of 1e-6 means nothing without knowing the floor,
+which varies over orders of magnitude across the sweep.
+"""
 import argparse
 import json
 from collections import defaultdict
@@ -11,15 +24,44 @@ from matplotlib.patches import Rectangle
 import numpy as np
 
 
-def load_runs(runs_dir):
+# key in eval_per_r.npz, and the power that turns it into the plotted quantity:
+# the square-loss runs store per-r RMS, so the mean squared error is its square
+METRICS = {
+    "ce":  dict(key="ce_per_r",  power=1),
+    "mse": dict(key="rms_per_r", power=2),
+}
+
+
+def heat_transform(values, metric):
+    if metric == "ce":
+        return np.log10(1.0 + np.maximum(values, 0.0))
+    return np.log10(np.maximum(values, 1e-12))
+
+
+def heat_vmin(all_values, metric):
+    return 0.0 if metric == "ce" else float(np.percentile(all_values, 0.5))
+
+
+def color_label_for(metric, color_scale):
+    if metric == "ce":
+        return (r"$\log_{10}(1 + \mathrm{CE})$" if color_scale == "log"
+                else "Cross-entropy (nats)")
+    return (r"$\log_{10}(\mathrm{MSE})$" if color_scale == "log"
+            else "Mean squared error")
+
+
+def load_runs(runs_dir, metric="ce"):
     grouped = defaultdict(list)
     for path in sorted(Path(runs_dir).glob("win_w*_s*_seed*/eval_per_r.npz")):
         with open(path.parent / "params.json") as handle:
             params = json.load(handle)
+        spec = METRICS[metric]
         with np.load(path) as result:
+            if spec["key"] not in result.files:
+                continue
             run = {
                 "r": result["r_grid"],
-                "ce": result["ce_per_r"],
+                "ce": result[spec["key"]] ** spec["power"],
                 "start": float(params["start"]),
                 "end": float(params["start"] + params["width"]),
             }
@@ -29,11 +71,7 @@ def load_runs(runs_dir):
     return grouped
 
 
-def transformed_ce(ce):
-    return np.log10(1.0 + np.maximum(ce, 0.0))
-
-
-def distance_summary(runs, n_bins=24):
+def distance_summary(runs, metric="ce", n_bins=24):
     """Excess over an in-window model at the same r, binned by OOD distance."""
     r = runs[0]["r"]
     in_window_values = []
@@ -51,10 +89,14 @@ def distance_summary(runs, n_bins=24):
                                       np.zeros_like(r)))
         outside = (distance > 1e-9) & np.isfinite(reference)
         distances.extend(distance[outside])
-        excesses.extend(np.maximum(run["ce"][outside] - reference[outside], 0.0))
+        if metric == "ce":                      # additive, in nats
+            excesses.extend(np.maximum(run["ce"][outside] - reference[outside], 0.0))
+        else:                                   # a ratio: the floor varies hugely
+            excesses.extend(np.maximum(run["ce"][outside] / reference[outside], 1.0))
 
     distances = np.asarray(distances)
-    excesses = transformed_ce(np.asarray(excesses))
+    excesses = (np.log10(1.0 + np.asarray(excesses)) if metric == "ce"
+                else np.log10(np.asarray(excesses)))
     edges = np.linspace(0.0, distances.max(), n_bins + 1)
     centers = 0.5 * (edges[:-1] + edges[1:])
     median = np.full(n_bins, np.nan)
@@ -69,13 +111,15 @@ def distance_summary(runs, n_bins=24):
     return centers, median, lower, upper
 
 
-def plot(grouped, output, color_scale="log", separate_scales=False):
+def plot(grouped, output, color_scale="log", separate_scales=False, metric="ce"):
     widths = sorted(grouped, reverse=True)
-    transform = transformed_ce if color_scale == "log" else lambda ce: ce
+    transform = ((lambda v: heat_transform(v, metric)) if color_scale == "log"
+                 else (lambda v: v))
     all_values = np.concatenate(
         [transform(run["ce"]) for runs in grouped.values() for run in runs]
     )
     shared_vmax = np.percentile(all_values, 99.5)
+    shared_vmin = heat_vmin(all_values, metric) if color_scale == "log" else 0.0
 
     fig = plt.figure(figsize=(13, 10), layout="constrained")
     grid = fig.add_gridspec(3, 2, height_ratios=[1, 1, 0.85])
@@ -86,10 +130,12 @@ def plot(grouped, output, color_scale="log", separate_scales=False):
         runs = sorted(grouped[width], key=lambda run: run["start"])
         matrix = np.stack([transform(run["ce"]) for run in runs])
         vmax = np.percentile(matrix, 99.5) if separate_scales else shared_vmax
+        vmin = (heat_vmin(matrix, metric) if (separate_scales and color_scale == "log")
+                else shared_vmin)
         extent = [runs[0]["r"][0], runs[0]["r"][-1], len(runs), 0]
         image = ax.imshow(
             matrix, aspect="auto", interpolation="nearest", extent=extent,
-            cmap="magma", vmin=0.0, vmax=vmax,
+            cmap="magma", vmin=vmin, vmax=vmax,
         )
         images.append(image)
         for row, run in enumerate(runs):
@@ -106,10 +152,7 @@ def plot(grouped, output, color_scale="log", separate_scales=False):
             f"{runs[-1]['start']:.3g}",
         ])
 
-    color_label = (
-        r"$\log_{10}(1 + \mathrm{CE})$"
-        if color_scale == "log" else "Cross-entropy (nats)"
-    )
+    color_label = color_label_for(metric, color_scale)
     if separate_scales:
         for ax, image in zip(heat_axes, images):
             colorbar = fig.colorbar(image, ax=ax, pad=0.015)
@@ -121,7 +164,7 @@ def plot(grouped, output, color_scale="log", separate_scales=False):
     summary_ax = fig.add_subplot(grid[2, :])
     colors = plt.get_cmap("viridis")(np.linspace(0.12, 0.88, len(widths)))
     for width, color in zip(widths, colors):
-        x, median, lower, upper = distance_summary(grouped[width])
+        x, median, lower, upper = distance_summary(grouped[width], metric)
         summary_ax.plot(x, median, color=color, lw=2, label=f"width {width:g}")
         summary_ax.fill_between(x, lower, upper, color=color, alpha=0.16)
     summary_ax.set_xlabel(r"Distance outside training interval in $r$")
@@ -149,12 +192,13 @@ def plot(grouped, output, color_scale="log", separate_scales=False):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--runs_dir", default="runs")
+    parser.add_argument("--metric", choices=["ce", "mse"], default="ce")
     parser.add_argument("--output", default="figures/window_sweep_heatmaps.png")
     parser.add_argument("--color_scale", choices=["linear", "log"], default="log")
     parser.add_argument("--separate_scales", action="store_true")
     args = parser.parse_args()
-    grouped = load_runs(args.runs_dir)
-    plot(grouped, args.output, args.color_scale, args.separate_scales)
+    grouped = load_runs(args.runs_dir, args.metric)
+    plot(grouped, args.output, args.color_scale, args.separate_scales, args.metric)
     print(f"saved {args.output} and {Path(args.output).with_suffix('.pdf')}")
 
 
