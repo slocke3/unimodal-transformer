@@ -47,12 +47,12 @@ plt.rcParams.update({
 MS = np.array([100, 250, 500, 1000, 2000, 4000, 8000])
 TOTAL_TRAJ = 32_000
 
-ARMS = [(8,   "runs_divbins/in8_{o}_m{m}_seed0",       160),
-        (16,  "runs_divbins/in16_{o}_m{m}_seed0",      160),
-        (32,  "runs_divbins/in32_{o}_m{m}_seed0",      160),
-        (64,  "runs_divbins_320k/in64_{o}_m{m}_seed0", 320),
-        (128, "runs_divbins_320k/in128_{o}_m{m}_seed0", 320),
-        (256, "runs_divbins_320k/in256_{o}_m{m}_seed0", 320)]
+ARMS = [(8,   "runs_divbins/in8_{o}_m{m}_seed{s}",       160),
+        (16,  "runs_divbins/in16_{o}_m{m}_seed{s}",      160),
+        (32,  "runs_divbins/in32_{o}_m{m}_seed{s}",      160),
+        (64,  "runs_divbins_320k/in64_{o}_m{m}_seed{s}", 320),
+        (128, "runs_divbins_320k/in128_{o}_m{m}_seed{s}", 320),
+        (256, "runs_divbins_320k/in256_{o}_m{m}_seed{s}", 320)]
 
 # (output tag, panel title, y label, per-r key stem, aggregator)
 PANELS = [
@@ -63,11 +63,20 @@ PANELS = [
 ]
 
 
-def load(tmpl, otag, m, key):
-    p = tmpl.format(o=otag, m=m) + "/eval_per_r.npz"
+def load(tmpl, otag, m, key, seed=0):
+    p = tmpl.format(o=otag, m=m, s=seed) + "/eval_per_r.npz"
     if not os.path.exists(p):
         return None
     return np.load(p)[key]
+
+
+# Seeds are drawn individually rather than as a band. Under the square loss the
+# run-to-run spread is about 1x away from each arm's transition and 52x to 88x
+# at it, because near the threshold a run either generalises or does not; a
+# filled range there would merge two populations into one region and the median
+# would report whichever branch had the majority. Under cross-entropy the spread
+# never exceeds 2x and a band would have been safe, but one convention across
+# both panels is easier to read than two.
 
 
 def main():
@@ -78,6 +87,8 @@ def main():
                          "validation split is drawn from the same budget "
                          "(val_frac 0.15, capped at max_val_traj=600), so "
                          "31,400 of the 32,000 reach the optimizer.")
+    ap.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2, 3],
+                    help="seeds to overlay as thin lines; the median is heavy")
     a = ap.parse_args()
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
 
@@ -86,16 +97,26 @@ def main():
 
     for ax, (otag, title, ylab, stem, agg) in zip(axes, PANELS):
         for (nbin, tmpl, _steps), c in zip(ARMS, colors):
-            new = [load(tmpl, otag, m, f"{stem}_per_r") for m in MS]
-            seen = [load(tmpl, otag, m, f"{stem}_at_train_r") for m in MS]
-            if any(v is None for v in new + seen):
+            per_seed_new, per_seed_seen = [], []
+            for sd in a.seeds:
+                new = [load(tmpl, otag, m, f"{stem}_per_r", sd) for m in MS]
+                seen = [load(tmpl, otag, m, f"{stem}_at_train_r", sd) for m in MS]
+                if any(v is None for v in new + seen):
+                    continue
+                per_seed_new.append([agg(v) for v in new])
+                per_seed_seen.append([agg(v) for v in seen])
+            if not per_seed_new:
                 print(f"  [skip] {nbin} bins / {otag}: missing runs")
                 continue
-            y_new = np.array([agg(v) for v in new])
-            y_seen = np.array([agg(v) for v in seen])
-            ax.plot(MS, y_new, "-o", ms=5.8, lw=2.4, color=c, zorder=3,
-                    label=f"{nbin}")
-            ax.plot(MS, y_seen, "--", lw=1.7, color=c, alpha=0.65, zorder=2)
+            yn = np.array(per_seed_new); ys = np.array(per_seed_seen)
+            for row in yn:
+                ax.plot(MS, row, "-", lw=0.8, color=c, alpha=0.45, zorder=2)
+            ax.plot(MS, np.median(yn, 0), "-o", ms=5.8, lw=2.4, color=c,
+                    zorder=3, label=f"{nbin}")
+            ax.plot(MS, np.median(ys, 0), "--", lw=1.7, color=c, alpha=0.65,
+                    zorder=2)
+            print(f"  {nbin:>4} bins / {otag}: {len(yn)} seeds, "
+                  f"max spread {np.max(yn.max(0) / yn.min(0)):.0f}x")
 
         ax.set_xscale("log")
         ax.set_yscale("log")

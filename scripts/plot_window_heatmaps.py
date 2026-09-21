@@ -168,16 +168,27 @@ def plot(grouped, output, color_scale="log", separate_scales=False, metric="ce")
         summary_ax.plot(x, median, color=color, lw=2, label=f"width {width:g}")
         summary_ax.fill_between(x, lower, upper, color=color, alpha=0.16)
     summary_ax.set_xlabel(r"Distance outside training interval in $r$")
-    summary_ax.set_ylabel(r"Excess CE over in-window model at same $r$")
-    summary_ax.set_yticks(np.log10(1 + np.array([0, 1, 10, 100])))
-    summary_ax.set_yticklabels(["0", "1", "10", "100"])
+    if metric == "ce":
+        # values are log10(1 + excess in nats), so the ticks are placed there
+        summary_ax.set_ylabel(r"Excess CE over in-window model at same $r$")
+        summary_ax.set_yticks(np.log10(1 + np.array([0, 1, 10, 100])))
+        summary_ax.set_yticklabels(["0", "1", "10", "100"])
+    else:
+        # values are log10 of a ratio, so decades are the natural ticks; the
+        # cross-entropy placement above would put them in the wrong places
+        summary_ax.set_ylabel("MSE relative to in-window model at same $r$")
+        summary_ax.set_yticks([0, 1, 2, 3, 4])
+        summary_ax.set_yticklabels([r"$1\times$", r"$10\times$", r"$10^2\times$",
+                                    r"$10^3\times$", r"$10^4\times$"])
     summary_ax.grid(alpha=0.25)
     summary_ax.legend(title="Training interval", ncols=4)
     summary_ax.set_title("Typical extrapolation penalty (median and interquartile range)")
+    summary_ax.set_ylim(bottom=0)
 
     fig.suptitle(
         "Where does each window-trained transformer generalize?\n"
-        f"8,000 trajectories per model; {color_scale} CE color scale"
+        f"8,000 trajectories per model; {color_scale} "
+        f"{'cross-entropy' if metric == 'ce' else 'mean squared error'} colour scale"
         f"{' fitted separately per panel' if separate_scales else ''}; "
         "white boxes are training ranges",
         fontsize=14,
