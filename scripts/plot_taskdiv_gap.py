@@ -70,13 +70,12 @@ def load(tmpl, otag, m, key, seed=0):
     return np.load(p)[key]
 
 
-# Seeds are drawn individually rather than as a band. Under the square loss the
-# run-to-run spread is about 1x away from each arm's transition and 52x to 88x
-# at it, because near the threshold a run either generalises or does not; a
-# filled range there would merge two populations into one region and the median
-# would report whichever branch had the majority. Under cross-entropy the spread
-# never exceeds 2x and a band would have been safe, but one convention across
-# both panels is easier to read than two.
+# The seed range is shaded, with the median drawn over it. Read the square-loss
+# band with care at each arm's transition: the spread there is 52x to 88x against
+# about 1x either side, because a run near the threshold either generalises or
+# does not, so the fill spans two branches rather than describing scatter about
+# the median. Under cross-entropy the spread never exceeds 2x and the band is an
+# ordinary range.
 
 
 def main():
@@ -109,8 +108,10 @@ def main():
                 print(f"  [skip] {nbin} bins / {otag}: missing runs")
                 continue
             yn = np.array(per_seed_new); ys = np.array(per_seed_seen)
-            for row in yn:
-                ax.plot(MS, row, "-", lw=0.8, color=c, alpha=0.45, zorder=2)
+            ax.fill_between(MS, yn.min(0), yn.max(0), color=c, alpha=0.22,
+                            lw=0, zorder=1)
+            ax.fill_between(MS, ys.min(0), ys.max(0), color=c, alpha=0.12,
+                            lw=0, zorder=1)
             ax.plot(MS, np.median(yn, 0), "-o", ms=5.8, lw=2.4, color=c,
                     zorder=3, label=f"{nbin}")
             ax.plot(MS, np.median(ys, 0), "--", lw=1.7, color=c, alpha=0.65,
