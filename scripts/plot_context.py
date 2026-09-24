@@ -25,19 +25,31 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-MS = [100, 250, 500, 1000, 2000, 4000, 8000]
-CTX = [10, 25, 35, 50, 75]
+MS = [100, 150, 250, 350, 500, 700, 1000, 1400, 2000, 4000, 8000]
+CTX = [10, 20, 25, 30, 35, 50, 60, 75]
+SEEDS = [0, 1, 2]
+OLD_M = [100, 250, 500, 1000, 2000, 4000, 8000]   # where L=50 lives in the
+                                                  # binning sweep rather than runs_ctx
 
 
-def trained(L, m, key):
-    p = (f"runs_divbins_320k/in64_mse_m{m}_seed0" if L == 50
-         else f"runs_ctx/L{L}_m{m}_seed0")
+def trained(L, m, key, seed=0):
+    """L=50 at the original task counts is the in64_mse arm of the binning
+    sweep; everything else, L=50 at the added task counts included, is its own
+    run under runs_ctx."""
+    p = (f"runs_divbins_320k/in64_mse_m{m}_seed{seed}"
+         if L == 50 and m in OLD_M else f"runs_ctx/L{L}_m{m}_seed{seed}")
     f = p + "/eval_per_r.npz"
     if not glob.glob(f):
         return np.nan
     # mean of the SQUARED per-r error: the mean squared error over the grid.
     # Averaging per-r RMS then squaring is smaller by Jensen and arm-dependent.
     return float(np.nanmean(np.load(f)[key] ** 2))
+
+
+def band(L, key):
+    """median over the three seeds, and the full range."""
+    y = np.array([[trained(L, m, key, s) for m in MS] for s in SEEDS])
+    return np.median(y, 0), y.min(0), y.max(0)
 
 
 z = np.load("figures_taskdiv/eval_context.npz")
@@ -59,8 +71,11 @@ for i, (key, rkey, lab) in enumerate(
         if i == 1:
             missing.extend(L for L, v in zip(CTX, y) if not np.isfinite(v))
         ax.plot(CTX, y, "o-", color=c, ms=6, lw=1.7, label=str(m))
-        yr = [np.nanmean(z[f"in64_mse_m{m}_seed0_L{L}_{rkey}"] ** 2) for L in RL]
-        ax.plot(RL, yr, "--", color=c, lw=1.2, alpha=0.75)
+        # the restricted-context evaluation was only run at the original task
+        # counts, so skip the ones added later rather than key into a missing array
+        if m in OLD_M:
+            yr = [np.nanmean(z[f"in64_mse_m{m}_seed0_L{L}_{rkey}"] ** 2) for L in RL]
+            ax.plot(RL, yr, "--", color=c, lw=1.2, alpha=0.75)
     ax.set_xscale("log"); ax.set_yscale("log")
     ax.set_xticks([1, 2, 5, 10, 25, 50, 75])
     ax.set_xticklabels(["1", "2", "5", "10", "25", "50", "75"])
@@ -133,39 +148,31 @@ def mstar(c, min_drop=2.0):
     return None, drop
 
 
-ccols = [plt.get_cmap("viridis")(v) for v in np.linspace(0.12, 0.88, len(CTX))]
-fig3, ax3 = plt.subplots(figsize=(7.6, 6.0))
-# One panel, both rows on a single axis. Splitting them into stacked panels let
-# each autoscale, which flattered the seen-task row: on a shared scale its whole
-# range is a sliver, and that is the finding -- context length barely moves
-# performance on tasks the model trained on, while it moves new-task error by
-# three orders of magnitude at low diversity.
+ccols = [plt.get_cmap("viridis")(v) for v in np.linspace(0.08, 0.92, len(CTX))]
+fig3, ax3 = plt.subplots(figsize=(8.4, 6.2))
 for L, c in zip(CTX, ccols):
-    ax3.plot(MS, [trained(L, m, "rms_per_r") for m in MS], "o-", color=c,
-             ms=6, lw=1.8, label=str(L))
-    ax3.plot(MS, [trained(L, m, "rms_at_train_r") for m in MS], "--", color=c,
-             lw=1.4, alpha=0.85)
-    mm, dd = mstar([trained(L, m, "rms_per_r") for m in MS])
-    print("  L=%-3d m* = %-8s drop %6.1fx" %
-          (L, "none" if mm is None else "%.0f" % mm, dd))
+    mn, lo, hi = band(L, "rms_per_r")
+    ax3.fill_between(MS, lo, hi, color=c, alpha=0.20, lw=0, zorder=1)
+    ax3.plot(MS, mn, "o-", color=c, ms=5.2, lw=1.8, zorder=3, label=str(L))
+    ms_, lo_, hi_ = band(L, "rms_at_train_r")
+    ax3.plot(MS, ms_, "--", color=c, lw=1.3, alpha=0.8, zorder=2)
 ax3.set_xscale("log"); ax3.set_yscale("log"); ax3.grid(alpha=0.25, lw=0.5)
 ax3.set_xlabel("number of training tasks (distinct $r$ values)")
 ax3.set_ylabel("mean squared error")
-# keep clear of the dashed band along the bottom; the mid-right is empty once
-# every curve has converged
 leg1 = ax3.legend(frameon=False, fontsize=9.5, ncol=2, loc="center right",
-                  bbox_to_anchor=(1.0, 0.52),
-                  title="context length", title_fontsize=9.5)
+                  bbox_to_anchor=(1.0, 0.56), title="context length",
+                  title_fontsize=9.5)
 ax3.add_artist(leg1)
-h = [plt.Line2D([], [], color="k", lw=1.8, marker="o", ms=6),
-     plt.Line2D([], [], color="k", lw=1.4, ls="--")]
+h = [plt.Line2D([], [], color="k", lw=1.8, marker="o", ms=5.2),
+     plt.Line2D([], [], color="k", lw=1.3, ls="--")]
 ax3.legend(h, ["new tasks (full-range grid)", "seen tasks (at training $r$)"],
            frameon=False, fontsize=9.5, loc="upper right")
 for sp in ("top", "right"):
     ax3.spines[sp].set_visible(False)
 fig3.text(0.5, -0.05,
           "Square loss against the exact next state, 64 input bins, 320k steps, 32000 trajectories, one model per context length.\n"
-          "traj_len = context_len + 100 throughout, so every arm keeps 100 windows per trajectory and the same 3.2M pool.",
+          "Median of three seeds with the full range shaded; traj_len = context_len + 100 throughout, so every arm keeps 100\n"
+          "windows per trajectory. Near each transition the range spans two branches rather than scatter, so read it with care.",
           ha="center", fontsize=9.5, color="0.25")
 fig3.tight_layout()
 for e in ("png", "pdf"):
