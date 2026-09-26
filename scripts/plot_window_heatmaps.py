@@ -111,7 +111,8 @@ def distance_summary(runs, metric="ce", n_bins=24):
     return centers, median, lower, upper
 
 
-def plot(grouped, output, color_scale="log", separate_scales=False, metric="ce"):
+def plot(grouped, output, color_scale="log", separate_scales=False, metric="ce",
+         vmax_fixed=None, over_color="#00e0d8"):
     widths = sorted(grouped, reverse=True)
     transform = ((lambda v: heat_transform(v, metric)) if color_scale == "log"
                  else (lambda v: v))
@@ -120,6 +121,13 @@ def plot(grouped, output, color_scale="log", separate_scales=False, metric="ce")
     )
     shared_vmax = np.percentile(all_values, 99.5)
     shared_vmin = heat_vmin(all_values, metric) if color_scale == "log" else 0.0
+    # A fixed ceiling pins the scale to a range of interest instead of a
+    # percentile. Everything above it is painted in a colour the map does not
+    # contain, so saturated cells are visibly off-scale rather than merging with
+    # the top of the ramp.
+    cmap = plt.get_cmap("magma").copy()
+    if vmax_fixed is not None:
+        cmap.set_over(over_color)
 
     fig = plt.figure(figsize=(13, 10), layout="constrained")
     grid = fig.add_gridspec(3, 2, height_ratios=[1, 1, 0.85])
@@ -129,13 +137,16 @@ def plot(grouped, output, color_scale="log", separate_scales=False, metric="ce")
     for ax, width in zip(heat_axes, widths):
         runs = sorted(grouped[width], key=lambda run: run["start"])
         matrix = np.stack([transform(run["ce"]) for run in runs])
-        vmax = np.percentile(matrix, 99.5) if separate_scales else shared_vmax
-        vmin = (heat_vmin(matrix, metric) if (separate_scales and color_scale == "log")
-                else shared_vmin)
+        if vmax_fixed is not None:
+            vmin, vmax = 0.0, vmax_fixed
+        else:
+            vmax = np.percentile(matrix, 99.5) if separate_scales else shared_vmax
+            vmin = (heat_vmin(matrix, metric)
+                    if (separate_scales and color_scale == "log") else shared_vmin)
         extent = [runs[0]["r"][0], runs[0]["r"][-1], len(runs), 0]
         image = ax.imshow(
             matrix, aspect="auto", interpolation="nearest", extent=extent,
-            cmap="magma", vmin=vmin, vmax=vmax,
+            cmap=cmap, vmin=vmin, vmax=vmax,
         )
         images.append(image)
         for row, run in enumerate(runs):
@@ -155,10 +166,12 @@ def plot(grouped, output, color_scale="log", separate_scales=False, metric="ce")
     color_label = color_label_for(metric, color_scale)
     if separate_scales:
         for ax, image in zip(heat_axes, images):
-            colorbar = fig.colorbar(image, ax=ax, pad=0.015)
+            colorbar = fig.colorbar(image, ax=ax, pad=0.015,
+                                    extend="max" if vmax_fixed is not None else "neither")
             colorbar.set_label(color_label)
     else:
-        colorbar = fig.colorbar(images[-1], ax=heat_axes, pad=0.015, shrink=0.9)
+        colorbar = fig.colorbar(images[-1], ax=heat_axes, pad=0.015, shrink=0.9,
+                                extend="max" if vmax_fixed is not None else "neither")
         colorbar.set_label(f"{color_label}; white boxes are training ranges")
 
     summary_ax = fig.add_subplot(grid[2, :])
@@ -185,10 +198,13 @@ def plot(grouped, output, color_scale="log", separate_scales=False, metric="ce")
     summary_ax.set_title("Typical extrapolation penalty (median and interquartile range)")
     summary_ax.set_ylim(bottom=0)
 
+    range_note = ("" if vmax_fixed is None
+                  else f", 0 to {vmax_fixed:g}, above that off-scale")
     fig.suptitle(
         "Where does each window-trained transformer generalize?\n"
         f"8,000 trajectories per model; {color_scale} "
         f"{'cross-entropy' if metric == 'ce' else 'mean squared error'} colour scale"
+        f"{range_note}"
         f"{' fitted separately per panel' if separate_scales else ''}; "
         "white boxes are training ranges",
         fontsize=14,
@@ -207,9 +223,13 @@ def main():
     parser.add_argument("--output", default="figures/window_sweep_heatmaps.png")
     parser.add_argument("--color_scale", choices=["linear", "log"], default="log")
     parser.add_argument("--separate_scales", action="store_true")
+    parser.add_argument("--vmax", type=float, default=None,
+                        help="fix the colour scale at 0..VMAX; cells above it "
+                             "are drawn in a colour outside the map")
     args = parser.parse_args()
     grouped = load_runs(args.runs_dir, args.metric)
-    plot(grouped, args.output, args.color_scale, args.separate_scales, args.metric)
+    plot(grouped, args.output, args.color_scale, args.separate_scales, args.metric,
+         vmax_fixed=args.vmax)
     print(f"saved {args.output} and {Path(args.output).with_suffix('.pdf')}")
 
 
