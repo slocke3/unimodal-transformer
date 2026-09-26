@@ -112,7 +112,7 @@ def distance_summary(runs, metric="ce", n_bins=24):
 
 
 def plot(grouped, output, color_scale="log", separate_scales=False, metric="ce",
-         vmax_fixed=None, over_color="#00e0d8", contour=None):
+         vmax_fixed=None, over_color="#00e0d8", contour=None, focus=None):
     widths = sorted(grouped, reverse=True)
     transform = ((lambda v: heat_transform(v, metric)) if color_scale == "log"
                  else (lambda v: v))
@@ -128,6 +128,15 @@ def plot(grouped, output, color_scale="log", separate_scales=False, metric="ce",
     cmap = plt.get_cmap("magma").copy()
     if vmax_fixed is not None:
         cmap.set_over(over_color)
+    if focus is not None:
+        # Spend the whole colour ramp on cells the model actually handles and
+        # push the rest out of it. Capping the other way round -- colouring
+        # 0..0.1 -- gave most of the ramp to cells that are all failures, since
+        # out-of-window error is 100x to 10000x the in-window level. Failures
+        # become one neutral grey: present, clearly off-scale, not competing.
+        cmap.set_over("#d9d9d9")
+        focus_lo = np.percentile(all_values[all_values <= transform(np.array([focus]))[0]], 1)
+        focus_hi = transform(np.array([focus]))[0]
 
     fig = plt.figure(figsize=(13, 10), layout="constrained")
     grid = fig.add_gridspec(3, 2, height_ratios=[1, 1, 0.85])
@@ -137,7 +146,9 @@ def plot(grouped, output, color_scale="log", separate_scales=False, metric="ce",
     for ax, width in zip(heat_axes, widths):
         runs = sorted(grouped[width], key=lambda run: run["start"])
         matrix = np.stack([transform(run["ce"]) for run in runs])
-        if vmax_fixed is not None:
+        if focus is not None:
+            vmin, vmax = focus_lo, focus_hi
+        elif vmax_fixed is not None:
             vmin, vmax = 0.0, vmax_fixed
         else:
             vmax = np.percentile(matrix, 99.5) if separate_scales else shared_vmax
@@ -158,9 +169,12 @@ def plot(grouped, output, color_scale="log", separate_scales=False, metric="ce",
             ax.contour(runs[0]["r"], yc, matrix, levels=[transform(np.array([contour]))[0]],
                        colors="#39ff14", linewidths=1.6, zorder=4)
         for row, run in enumerate(runs):
+            # white reads against the magma ramp, but vanishes on the grey
+            # that --focus_below paints failures with
             ax.add_patch(Rectangle(
                 (run["start"], row), width, 1, fill=False,
-                edgecolor="white", linewidth=0.65, alpha=0.9,
+                edgecolor="#1a1a1a" if focus is not None else "white",
+                linewidth=0.8 if focus is not None else 0.65, alpha=0.9,
             ))
         ax.set_title(f"Width {width:g} · {len(runs)} training windows")
         ax.set_xlabel(r"Evaluation parameter $r$")
@@ -175,12 +189,12 @@ def plot(grouped, output, color_scale="log", separate_scales=False, metric="ce",
     if separate_scales:
         for ax, image in zip(heat_axes, images):
             colorbar = fig.colorbar(image, ax=ax, pad=0.015,
-                                    extend="max" if vmax_fixed is not None else "neither")
+                                    extend="max" if (vmax_fixed is not None or focus is not None) else "neither")
             colorbar.set_label(color_label)
     else:
         colorbar = fig.colorbar(images[-1], ax=heat_axes, pad=0.015, shrink=0.9,
-                                extend="max" if vmax_fixed is not None else "neither")
-        colorbar.set_label(f"{color_label}; white boxes are training ranges")
+                                extend="max" if (vmax_fixed is not None or focus is not None) else "neither")
+        colorbar.set_label(color_label)
 
     summary_ax = fig.add_subplot(grid[2, :])
     colors = plt.get_cmap("viridis")(np.linspace(0.12, 0.88, len(widths)))
@@ -210,15 +224,19 @@ def plot(grouped, output, color_scale="log", separate_scales=False, metric="ce",
         heat_axes[0].plot([], [], color="#39ff14", lw=1.6,
                           label=f"error = {contour:g}")
         heat_axes[0].legend(frameon=True, fontsize=10, loc="lower left")
+    if focus is not None:
+        range_note2 = (f"; only cells below {focus:g} are coloured, the rest grey")
+    else:
+        range_note2 = ""
     range_note = ("" if vmax_fixed is None
                   else f", 0 to {vmax_fixed:g}, above that off-scale")
     fig.suptitle(
         "Where does each window-trained transformer generalize?\n"
         f"8,000 trajectories per model; {color_scale} "
         f"{'cross-entropy' if metric == 'ce' else 'mean squared error'} colour scale"
-        f"{range_note}"
+        f"{range_note}{range_note2}"
         f"{' fitted separately per panel' if separate_scales else ''}; "
-        "white boxes are training ranges",
+        f"{'outlined' if focus is not None else 'white'} boxes are training ranges",
         fontsize=14,
     )
     output = Path(output)
@@ -235,6 +253,9 @@ def main():
     parser.add_argument("--output", default="figures/window_sweep_heatmaps.png")
     parser.add_argument("--color_scale", choices=["linear", "log"], default="log")
     parser.add_argument("--separate_scales", action="store_true")
+    parser.add_argument("--focus_below", type=float, default=None,
+                        help="colour only cells below this error, fitting the "
+                             "ramp to them; everything above is neutral grey")
     parser.add_argument("--contour", type=float, default=None,
                         help="draw a boundary at this error level: the line "
                              "separates where the model works from where it "
@@ -245,7 +266,7 @@ def main():
     args = parser.parse_args()
     grouped = load_runs(args.runs_dir, args.metric)
     plot(grouped, args.output, args.color_scale, args.separate_scales, args.metric,
-         vmax_fixed=args.vmax, contour=args.contour)
+         vmax_fixed=args.vmax, contour=args.contour, focus=args.focus_below)
     print(f"saved {args.output} and {Path(args.output).with_suffix('.pdf')}")
 
 
