@@ -112,7 +112,7 @@ def distance_summary(runs, metric="ce", n_bins=24):
 
 
 def plot(grouped, output, color_scale="log", separate_scales=False, metric="ce",
-         vmax_fixed=None, over_color="#00e0d8"):
+         vmax_fixed=None, over_color="#00e0d8", contour=None):
     widths = sorted(grouped, reverse=True)
     transform = ((lambda v: heat_transform(v, metric)) if color_scale == "log"
                  else (lambda v: v))
@@ -149,6 +149,14 @@ def plot(grouped, output, color_scale="log", separate_scales=False, metric="ce",
             cmap=cmap, vmin=vmin, vmax=vmax,
         )
         images.append(image)
+        if contour is not None:
+            # A capped linear scale draws gradations among cells that are all
+            # failures -- out-of-window error runs 100x to 10000x the in-window
+            # level, and none of those differences matter. The boundary does.
+            # Drawn on the same transform as the image so the level lines up.
+            yc = np.arange(len(runs)) + 0.5
+            ax.contour(runs[0]["r"], yc, matrix, levels=[transform(np.array([contour]))[0]],
+                       colors="#39ff14", linewidths=1.6, zorder=4)
         for row, run in enumerate(runs):
             ax.add_patch(Rectangle(
                 (run["start"], row), width, 1, fill=False,
@@ -198,6 +206,10 @@ def plot(grouped, output, color_scale="log", separate_scales=False, metric="ce",
     summary_ax.set_title("Typical extrapolation penalty (median and interquartile range)")
     summary_ax.set_ylim(bottom=0)
 
+    if contour is not None:
+        heat_axes[0].plot([], [], color="#39ff14", lw=1.6,
+                          label=f"error = {contour:g}")
+        heat_axes[0].legend(frameon=True, fontsize=10, loc="lower left")
     range_note = ("" if vmax_fixed is None
                   else f", 0 to {vmax_fixed:g}, above that off-scale")
     fig.suptitle(
@@ -223,13 +235,17 @@ def main():
     parser.add_argument("--output", default="figures/window_sweep_heatmaps.png")
     parser.add_argument("--color_scale", choices=["linear", "log"], default="log")
     parser.add_argument("--separate_scales", action="store_true")
+    parser.add_argument("--contour", type=float, default=None,
+                        help="draw a boundary at this error level: the line "
+                             "separates where the model works from where it "
+                             "does not, which is the question the figure asks")
     parser.add_argument("--vmax", type=float, default=None,
                         help="fix the colour scale at 0..VMAX; cells above it "
                              "are drawn in a colour outside the map")
     args = parser.parse_args()
     grouped = load_runs(args.runs_dir, args.metric)
     plot(grouped, args.output, args.color_scale, args.separate_scales, args.metric,
-         vmax_fixed=args.vmax)
+         vmax_fixed=args.vmax, contour=args.contour)
     print(f"saved {args.output} and {Path(args.output).with_suffix('.pdf')}")
 
 
