@@ -1,0 +1,16 @@
+statistic,CE,MSE
+pair_partial_context_occupancy_js,0.569662,0.464495
+pair_partial_support_l1,0.562155,0.353201
+pair_partial_support_l2,0.551163,0.344528
+pair_spearman_context_occupancy_js,0.560146,0.529043
+pair_spearman_parameter_distance,0.072796,0.352607
+pair_spearman_support_l1,0.439254,0.484570
+pair_spearman_support_l2,0.410816,0.478662
+window_residual_chaos,-0.328394,-0.198317
+window_residual_context_occupancy_js,0.039846,0.253256
+window_residual_support_l1,0.525865,0.321893
+window_residual_support_l2,0.531647,0.334237
+window_spearman_chaos,-0.592996,-0.368794
+window_spearman_context_occupancy_js,0.323738,0.328334
+window_spearman_support_l1,0.585195,0.325861
+window_spearman_support_l2,0.530602,0.317878

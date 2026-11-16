@@ -33,3 +33,5 @@ env/
 # IDE
 .vscode/
 .idea/
+# RunPod benchmark scratch runs
+bench/

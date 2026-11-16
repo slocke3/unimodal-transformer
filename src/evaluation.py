@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from scipy import stats
 
 from .maps import (
-    iterate_map, iterate_general, tokenize_trajectory, detokenize,
+    iterate_map, iterate_family_obs, iterate_general, tokenize_trajectory, detokenize,
     compute_lyapunov, compute_lyapunov_general, FAMILIES,
 )
 
@@ -30,7 +30,8 @@ def evaluate_per_r(model, r_grid, device, context_len, n_bins,
                    burn_in=0, n_eval_per_r=30, traj_len=150, seed=99,
                    return_histograms=False, input_mode="bins", n_bins_in=None,
                    n_bins_out=None, output_mode="bins", return_rms=False,
-                   synonyms=1, input_noise=0.0, attend_last=None):
+                   synonyms=1, input_noise=0.0, attend_last=None,
+                   family="logistic"):
     """
     Compute mean cross-entropy and top-1 accuracy per r value.
     When return_histograms=True, also return token-exposure counts with shape
@@ -66,7 +67,7 @@ def evaluate_per_r(model, r_grid, device, context_len, n_bins,
         raw_ctx, raw_tgt = [], []
         for _ in range(n_eval_per_r):
             x0 = rng.uniform(0.05, 0.95)
-            traj = iterate_map(x0, r, burn_in + traj_len)[burn_in:]
+            traj = iterate_family_obs(x0, r, burn_in + traj_len, family)[burn_in:]
             for t in range(len(traj) - window_size):
                 raw_ctx.append(traj[t : t + context_len])
                 raw_tgt.append(traj[t + context_len])

@@ -1,0 +1,19 @@
+association,metric,n_pairs,n_windows,rho
+Pooled,nearest_transition_support_distance,14658,53,0.4392539097633635
+Distance + width,nearest_transition_support_distance,14658,53,0.5621549444275348
+Distance + width + state,nearest_transition_support_distance,14658,53,0.27584260569602237
+Also target effects,nearest_transition_support_distance,14658,53,0.16249691962946133
+Target + window effects + state/distance,nearest_transition_support_distance,14658,53,0.010110055511380231
+Width 0.125,nearest_transition_support_distance,8100,28,0.4174759115821563
+Width 0.25,nearest_transition_support_distance,3900,14,0.4349683297563091
+Width 0.5,nearest_transition_support_distance,1800,7,0.5328749933677118
+Width 1,nearest_transition_support_distance,858,4,0.4025643860922632
+Pooled,nearest_transition_support_distance_euclidean,14658,53,0.41081636303775565
+Distance + width,nearest_transition_support_distance_euclidean,14658,53,0.5511625168491957
+Distance + width + state,nearest_transition_support_distance_euclidean,14658,53,0.27816703822823136
+Also target effects,nearest_transition_support_distance_euclidean,14658,53,0.1626961690647979
+Target + window effects + state/distance,nearest_transition_support_distance_euclidean,14658,53,0.004996701890761163
+Width 0.125,nearest_transition_support_distance_euclidean,8100,28,0.39354189333919853
+Width 0.25,nearest_transition_support_distance_euclidean,3900,14,0.40278411817499954
+Width 0.5,nearest_transition_support_distance_euclidean,1800,7,0.4968675949001006
+Width 1,nearest_transition_support_distance_euclidean,858,4,0.3708082360523315

@@ -147,6 +147,10 @@ def main():
     axes[1].legend(style, ["new tasks", "seen tasks"],
                    loc="lower left", framealpha=0.92)
 
+    for label, ax in zip(("(a)", "(b)"), axes):
+        ax.text(-0.14, 1.17, label, transform=ax.transAxes,
+                fontsize=17, fontweight="bold", va="top", ha="left")
+
     fig.tight_layout()
     fig.savefig(a.out, dpi=200, bbox_inches="tight")
     png = os.path.splitext(a.out)[0] + ".png"

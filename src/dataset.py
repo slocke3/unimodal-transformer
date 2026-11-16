@@ -2,7 +2,8 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
 
-from .maps import iterate_map, tokenize_trajectory, compute_lyapunov_array
+from .maps import (iterate_map, iterate_family_obs, tokenize_trajectory,
+                   compute_lyapunov_array)
 
 
 class DiscreteMapDataset(Dataset):
@@ -19,7 +20,7 @@ class DiscreteMapDataset(Dataset):
                  n_bins=64, seed=0, r_values=None,
                  input_mode="bins", n_bins_in=None, n_bins_out=None,
                  output_mode="bins", synonyms=1, input_noise=0.0,
-                 all_positions=False):
+                 all_positions=False, family="logistic"):
         """input_mode "continuous" hands the model raw x instead of bin indices;
         output_mode "scalar" makes the target the raw next x for a square loss.
         n_bins_in / n_bins_out default to n_bins, which reproduces the original
@@ -62,7 +63,8 @@ class DiscreteMapDataset(Dataset):
         # trajectory first, since tokenize_trajectory is elementwise.
         raw_ctx_list, raw_tgt_list, r_labels_list = [], [], []
         for i in range(n_trajectories):
-            traj = iterate_map(x0s[i], rs[i], burn_in + traj_len)[burn_in:]
+            traj = iterate_family_obs(x0s[i], rs[i], burn_in + traj_len,
+                                      family)[burn_in:]
             for t in range(len(traj) - window_size):
                 raw_ctx_list.append(traj[t : t + context_len])
                 raw_tgt_list.append(traj[t + context_len])

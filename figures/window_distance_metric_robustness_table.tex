@@ -1,0 +1,41 @@
+\begin{table}[t]
+  \centering
+  \caption{\textbf{The transition-support results are robust to the choice of ground metric.}
+  We recompute the directed distance from each target transition to the nearest
+  transition represented within the training window using Manhattan
+  ($\ell_1$) and Euclidean ($\ell_2$) distances on the $64\times64$
+  transition grid. Pair-level results use all $14{,}658$ out-of-support
+  window--target pairs; window-level results first average over the
+  out-of-support targets for each of the $53$ training windows. Partial
+  Spearman correlations control for parameter distance and categorical window
+  width. Residual correlations remove quadratic window-center and window-width
+  effects. Because training windows and evaluation targets overlap, all
+  correlations are descriptive.}
+  \label{tab:distance-metric-robustness}
+  \small
+  \setlength{\tabcolsep}{5pt}
+  \begin{tabular}{lcc}
+    \toprule
+    Association & Manhattan ($\ell_1$) & Euclidean ($\ell_2$) \\
+    \midrule
+    \multicolumn{3}{l}{\emph{Window--target pairs}} \\
+    $\rho_{\mathrm{S}}(D,\Delta)$
+      & $0.439$ & $0.411$ \\
+    $\rho_{\mathrm{S}}(D,\Delta\mid d_r,w)$
+      & $0.562$ & $0.551$ \\
+    \addlinespace
+    \multicolumn{3}{l}{\emph{Window-level summaries}} \\
+    $\rho_{\mathrm{S}}(\overline D,\overline\Delta)$
+      & $0.585$ & $0.531$ \\
+    $\rho_{\mathrm{S}}(C_{\mathrm{chaos}},\overline D)$
+      & $-0.599$ & $-0.556$ \\
+    Residual $r(\overline D,\overline\Delta)$
+      & $0.526$ & $0.532$ \\
+    Residual $r(C_{\mathrm{chaos}},\overline D)$
+      & $-0.752$ & $-0.773$ \\
+    \midrule
+    \multicolumn{3}{l}{Rank correlation between $\ell_1$ and $\ell_2$ distances: $0.995$} \\
+    \multicolumn{3}{l}{Same nearest source-grid parameter under both metrics: $87.3\%$} \\
+    \bottomrule
+  \end{tabular}
+\end{table}

@@ -1,0 +1,156 @@
+Window transition-similarity analysis
+=====================================
+OOD window-target pairs: 14658
+Process trajectories per r: 512
+Bins: 64
+Context length: 50
+Trajectory length: 150
+Response: same-width, same-target normalized log10(1 + CE) penalty
+Terminal metrics: one-step transitions at the supervised target
+Context metrics: all adjacent pairs as weighted by sliding examples
+
+Overall pair-level correlations:
+  nearest_transition_js: n=14658, Pearson=0.501, Spearman=0.366
+  nearest_transition_support_distance: n=14658, Pearson=0.446, Spearman=0.439
+  nearest_transition_support_distance_euclidean: n=14658, Pearson=0.428, Spearman=0.411
+  pooled_transition_js: n=14658, Pearson=0.389, Spearman=0.175
+  unseen_transition_mass: n=14658, Pearson=0.560, Spearman=0.244
+  occupancy_js: n=14658, Pearson=0.447, Spearman=0.560
+  context_transition_js: n=14658, Pearson=0.391, Spearman=0.189
+  context_unseen_transition_mass: n=14658, Pearson=0.474, Spearman=0.182
+  context_occupancy_js: n=14658, Pearson=0.458, Spearman=0.560
+  context_occupancy_wasserstein: n=14658, Pearson=0.294, Spearman=0.280
+  parameter_distance: n=14658, Pearson=0.085, Spearman=0.073
+
+Transition-support distance metric sensitivity:
+  Distances are normalized by the number of bins.
+  Manhattan vs Euclidean Spearman: 0.995
+  Same nearest source-grid parameter: 87.3%
+
+Exact-support saturation diagnostics:
+  nearest_transition_js at maximum log(2): 93.0%
+  unseen_transition_mass >= 0.999: 93.0%
+  context_unseen_transition_mass >= 0.999: 87.7%
+
+Partial Spearman correlations controlling parameter distance and
+categorical window width:
+  nearest_transition_js: 0.369
+  nearest_transition_support_distance: 0.562
+  nearest_transition_support_distance_euclidean: 0.551
+  pooled_transition_js: 0.164
+  unseen_transition_mass: 0.237
+  occupancy_js: 0.558
+  context_transition_js: 0.183
+  context_unseen_transition_mass: 0.172
+  context_occupancy_js: 0.570
+  context_occupancy_wasserstein: 0.426
+
+Descriptive rank-linear model with width indicators:
+  R^2=0.383
+  standardized coefficient parameter_distance: -0.353
+  standardized coefficient context_occupancy_js: 0.352
+  standardized coefficient nearest_transition_support_distance: 0.433
+  standardized coefficient nearest_transition_js: 0.060
+
+Pair-level Spearman correlations by window width:
+  width=1, n=858: nearest_transition_js=0.585, nearest_transition_support_distance=0.403, nearest_transition_support_distance_euclidean=0.371, pooled_transition_js=0.419, unseen_transition_mass=0.260, occupancy_js=0.687, context_transition_js=0.158, context_unseen_transition_mass=0.214, context_occupancy_js=0.582, context_occupancy_wasserstein=0.165, parameter_distance=-0.170
+  width=0.5, n=1800: nearest_transition_js=0.434, nearest_transition_support_distance=0.533, nearest_transition_support_distance_euclidean=0.497, pooled_transition_js=0.030, unseen_transition_mass=0.271, occupancy_js=0.559, context_transition_js=0.222, context_unseen_transition_mass=0.181, context_occupancy_js=0.637, context_occupancy_wasserstein=0.297, parameter_distance=0.060
+  width=0.25, n=3900: nearest_transition_js=0.392, nearest_transition_support_distance=0.435, nearest_transition_support_distance_euclidean=0.403, pooled_transition_js=0.186, unseen_transition_mass=0.238, occupancy_js=0.508, context_transition_js=0.225, context_unseen_transition_mass=0.217, context_occupancy_js=0.560, context_occupancy_wasserstein=0.280, parameter_distance=0.053
+  width=0.125, n=8100: nearest_transition_js=0.312, nearest_transition_support_distance=0.417, nearest_transition_support_distance_euclidean=0.394, pooled_transition_js=0.155, unseen_transition_mass=0.236, occupancy_js=0.563, context_transition_js=0.162, context_unseen_transition_mass=0.153, context_occupancy_js=0.544, context_occupancy_wasserstein=0.292, parameter_distance=0.107
+
+Median within-window Spearman correlation across target parameters
+(IQR across windows; this asks whether each metric orders targets
+within a fixed trained model):
+  nearest_transition_js: n_windows=53, 0.154 [0.021, 0.252]
+  nearest_transition_support_distance: n_windows=53, 0.120 [-0.096, 0.230]
+  nearest_transition_support_distance_euclidean: n_windows=53, 0.089 [-0.106, 0.198]
+  pooled_transition_js: n_windows=53, 0.139 [0.039, 0.252]
+  unseen_transition_mass: n_windows=53, 0.153 [0.113, 0.235]
+  occupancy_js: n_windows=53, 0.446 [0.255, 0.499]
+  context_transition_js: n_windows=53, 0.050 [-0.053, 0.205]
+  context_unseen_transition_mass: n_windows=53, 0.026 [-0.057, 0.232]
+  context_occupancy_js: n_windows=53, 0.433 [0.255, 0.514]
+  context_occupancy_wasserstein: n_windows=53, 0.091 [-0.095, 0.232]
+  parameter_distance: n_windows=53, -0.074 [-0.244, 0.120]
+
+Predictor correlations (Spearman):
+  nearest_transition_js vs nearest_transition_support_distance: 0.328
+  nearest_transition_js vs nearest_transition_support_distance_euclidean: 0.290
+  nearest_transition_js vs pooled_transition_js: 0.362
+  nearest_transition_js vs unseen_transition_mass: 0.303
+  nearest_transition_js vs occupancy_js: 0.395
+  nearest_transition_js vs context_transition_js: 0.213
+  nearest_transition_js vs context_unseen_transition_mass: 0.180
+  nearest_transition_js vs context_occupancy_js: 0.442
+  nearest_transition_js vs context_occupancy_wasserstein: 0.096
+  nearest_transition_js vs parameter_distance: -0.039
+  nearest_transition_support_distance vs nearest_transition_support_distance_euclidean: 0.995
+  nearest_transition_support_distance vs pooled_transition_js: 0.193
+  nearest_transition_support_distance vs unseen_transition_mass: 0.267
+  nearest_transition_support_distance vs occupancy_js: 0.364
+  nearest_transition_support_distance vs context_transition_js: 0.658
+  nearest_transition_support_distance vs context_unseen_transition_mass: 0.580
+  nearest_transition_support_distance vs context_occupancy_js: 0.697
+  nearest_transition_support_distance vs context_occupancy_wasserstein: 0.870
+  nearest_transition_support_distance vs parameter_distance: 0.726
+  nearest_transition_support_distance_euclidean vs pooled_transition_js: 0.192
+  nearest_transition_support_distance_euclidean vs unseen_transition_mass: 0.263
+  nearest_transition_support_distance_euclidean vs occupancy_js: 0.328
+  nearest_transition_support_distance_euclidean vs context_transition_js: 0.669
+  nearest_transition_support_distance_euclidean vs context_unseen_transition_mass: 0.589
+  nearest_transition_support_distance_euclidean vs context_occupancy_js: 0.660
+  nearest_transition_support_distance_euclidean vs context_occupancy_wasserstein: 0.875
+  nearest_transition_support_distance_euclidean vs parameter_distance: 0.764
+  pooled_transition_js vs unseen_transition_mass: 0.313
+  pooled_transition_js vs occupancy_js: 0.275
+  pooled_transition_js vs context_transition_js: 0.234
+  pooled_transition_js vs context_unseen_transition_mass: 0.230
+  pooled_transition_js vs context_occupancy_js: 0.154
+  pooled_transition_js vs context_occupancy_wasserstein: 0.143
+  pooled_transition_js vs parameter_distance: 0.137
+  unseen_transition_mass vs occupancy_js: 0.280
+  unseen_transition_mass vs context_transition_js: 0.299
+  unseen_transition_mass vs context_unseen_transition_mass: 0.295
+  unseen_transition_mass vs context_occupancy_js: 0.297
+  unseen_transition_mass vs context_occupancy_wasserstein: 0.173
+  unseen_transition_mass vs parameter_distance: 0.140
+  occupancy_js vs context_transition_js: 0.217
+  occupancy_js vs context_unseen_transition_mass: 0.223
+  occupancy_js vs context_occupancy_js: 0.668
+  occupancy_js vs context_occupancy_wasserstein: 0.302
+  occupancy_js vs parameter_distance: 0.067
+  context_transition_js vs context_unseen_transition_mass: 0.718
+  context_transition_js vs context_occupancy_js: 0.430
+  context_transition_js vs context_occupancy_wasserstein: 0.594
+  context_transition_js vs parameter_distance: 0.625
+  context_unseen_transition_mass vs context_occupancy_js: 0.421
+  context_unseen_transition_mass vs context_occupancy_wasserstein: 0.537
+  context_unseen_transition_mass vs parameter_distance: 0.575
+  context_occupancy_js vs context_occupancy_wasserstein: 0.610
+  context_occupancy_js vs parameter_distance: 0.327
+  context_occupancy_wasserstein vs parameter_distance: 0.841
+
+Caution: window-target pairs share targets and heavily overlapping
+training intervals. These correlations are descriptive, not
+independent-sample inferential tests.
+
+Window-level associations (n=53 overlapping windows):
+  chaos_fraction vs mean_nearest_transition_support_distance: Pearson=-0.549, Spearman=-0.599
+  chaos_fraction vs mean_nearest_transition_support_distance_euclidean: Pearson=-0.517, Spearman=-0.556
+  chaos_fraction vs mean_context_occupancy_js: Pearson=-0.561, Spearman=-0.500
+  mean_nearest_transition_support_distance vs mean_loss_penalty: Pearson=0.632, Spearman=0.585
+  mean_nearest_transition_support_distance_euclidean vs mean_loss_penalty: Pearson=0.613, Spearman=0.531
+  mean_context_occupancy_js vs mean_loss_penalty: Pearson=0.401, Spearman=0.324
+  Group medians [no chaotic coverage, some chaotic coverage]:
+    mean_loss_penalty: 1.254 (n=45), 0.785 (n=8)
+    mean_nearest_transition_support_distance: 0.492 (n=45), 0.194 (n=8)
+    mean_nearest_transition_support_distance_euclidean: 0.358 (n=45), 0.169 (n=8)
+    mean_context_occupancy_js: 0.663 (n=45), 0.608 (n=8)
+  Partial Pearson after removing quadratic window-center and width
+  effects (descriptive confound check):
+    chaos_fraction vs mean_nearest_transition_support_distance: -0.752
+    chaos_fraction vs mean_nearest_transition_support_distance_euclidean: -0.773
+    chaos_fraction vs mean_context_occupancy_js: 0.032
+    mean_nearest_transition_support_distance vs mean_loss_penalty: 0.526
+    mean_nearest_transition_support_distance_euclidean vs mean_loss_penalty: 0.532
+    mean_context_occupancy_js vs mean_loss_penalty: 0.040

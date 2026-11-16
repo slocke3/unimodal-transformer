@@ -1,0 +1,22 @@
+Restricted-window objective/output robustness
+=============================================
+CE response: same-width, same-target normalized log10(1 + CE)
+MSE response: same-width, same-target normalized log10(MSE)
+Pair-level n=14658; window-level n=53 overlapping windows
+Maximum CE reconstruction difference: 0.000e+00
+
+pair_partial_context_occupancy_js: CE=0.570, MSE=0.464
+pair_partial_support_l1: CE=0.562, MSE=0.353
+pair_partial_support_l2: CE=0.551, MSE=0.345
+pair_spearman_context_occupancy_js: CE=0.560, MSE=0.529
+pair_spearman_parameter_distance: CE=0.073, MSE=0.353
+pair_spearman_support_l1: CE=0.439, MSE=0.485
+pair_spearman_support_l2: CE=0.411, MSE=0.479
+window_residual_chaos: CE=-0.328, MSE=-0.198
+window_residual_context_occupancy_js: CE=0.040, MSE=0.253
+window_residual_support_l1: CE=0.526, MSE=0.322
+window_residual_support_l2: CE=0.532, MSE=0.334
+window_spearman_chaos: CE=-0.593, MSE=-0.369
+window_spearman_context_occupancy_js: CE=0.324, MSE=0.328
+window_spearman_support_l1: CE=0.585, MSE=0.326
+window_spearman_support_l2: CE=0.531, MSE=0.318

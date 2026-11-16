@@ -1,0 +1,66 @@
+\begin{table}[t]
+  \centering
+  \caption{\textbf{Represented-process similarity predicts transfer under both
+  categorical and scalar prediction objectives.}
+  We repeat the restricted-window correlation analysis for separately trained
+  models receiving the same $64$-bin inputs: one predicts a $64$-bin output
+  with cross-entropy (CE), and the other predicts a scalar with square loss
+  (MSE). For CE, $\Delta$ is the same-width, same-target difference in
+  $\log_{10}(1+\mathrm{CE})$; for MSE it is the corresponding log ratio,
+  $\log_{10}(\mathrm{MSE}/\mathrm{MSE}_{\mathrm{ref}})$. Here
+  $D_{\mathrm{state}}$ is context-token occupancy JS divergence,
+  $D_1$ and $D_2$ are nearest transition-support distances under Manhattan
+  and Euclidean ground metrics, $d_r$ is distance from the training interval
+  in parameter space, and $C_{\mathrm{chaos}}$ is the fraction of the training
+  interval with positive Lyapunov exponent. Pair-level partial correlations
+  control for $d_r$ and categorical window width. Window-level residual
+  correlations remove quadratic window-center and window-width effects.
+  Correlations are descriptive because evaluation targets and training
+  windows overlap.}
+  \label{tab:window-objective-robustness}
+  \small
+  \setlength{\tabcolsep}{6pt}
+  \begin{tabular}{lcc}
+    \toprule
+    Association & CE & Scalar MSE \\
+    \midrule
+    \multicolumn{3}{l}{\emph{Window--target level ($14{,}658$ OOD pairs): Spearman $\rho$}} \\
+    $\rho_{\mathrm{S}}(D_{\mathrm{state}},\Delta)$
+      & $0.560$ & $0.529$ \\
+    $\rho_{\mathrm{S}}(D_1,\Delta)$
+      & $0.439$ & $0.485$ \\
+    $\rho_{\mathrm{S}}(D_2,\Delta)$
+      & $0.411$ & $0.479$ \\
+    $\rho_{\mathrm{S}}(d_r,\Delta)$
+      & $0.073$ & $0.353$ \\
+    \addlinespace
+    \multicolumn{3}{l}{\emph{Window--target level: partial Spearman $\rho$}} \\
+    $\rho_{\mathrm{S}}(D_{\mathrm{state}},\Delta\mid d_r,w)$
+      & $0.570$ & $0.464$ \\
+    $\rho_{\mathrm{S}}(D_1,\Delta\mid d_r,w)$
+      & $0.562$ & $0.353$ \\
+    $\rho_{\mathrm{S}}(D_2,\Delta\mid d_r,w)$
+      & $0.551$ & $0.345$ \\
+    \addlinespace
+    \multicolumn{3}{l}{\emph{Training-window level ($53$ windows): Spearman $\rho$}} \\
+    $\rho_{\mathrm{S}}(C_{\mathrm{chaos}},\overline\Delta)$
+      & $-0.593$ & $-0.369$ \\
+    $\rho_{\mathrm{S}}(\overline D_{\mathrm{state}},\overline\Delta)$
+      & $0.324$ & $0.328$ \\
+    $\rho_{\mathrm{S}}(\overline D_1,\overline\Delta)$
+      & $0.585$ & $0.326$ \\
+    $\rho_{\mathrm{S}}(\overline D_2,\overline\Delta)$
+      & $0.531$ & $0.318$ \\
+    \addlinespace
+    \multicolumn{3}{l}{\emph{Training-window level: residual Pearson $r$}} \\
+    $r(C_{\mathrm{chaos}},\overline\Delta)$
+      & $-0.328$ & $-0.198$ \\
+    $r(\overline D_{\mathrm{state}},\overline\Delta)$
+      & $0.040$ & $0.253$ \\
+    $r(\overline D_1,\overline\Delta)$
+      & $0.526$ & $0.322$ \\
+    $r(\overline D_2,\overline\Delta)$
+      & $0.532$ & $0.334$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}

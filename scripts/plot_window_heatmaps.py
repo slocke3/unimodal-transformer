@@ -71,6 +71,20 @@ def load_runs(runs_dir, metric="ce"):
     return grouped
 
 
+def predicted_fixed_point_overlap_edge(width):
+    """Left edge predicted by matching the fixed point to the lower 2-cycle.
+
+    For a window [3, 3+w], set the stable fixed point x*(r)=1-1/r equal
+    to the lower period-two branch of the map at R=3+w.
+    """
+    upper_r = 3.0 + width
+    lower_cycle = (
+        upper_r + 1.0
+        - np.sqrt((upper_r - 3.0) * (upper_r + 1.0))
+    ) / (2.0 * upper_r)
+    return 1.0 / (1.0 - lower_cycle)
+
+
 def distance_summary(runs, metric="ce", n_bins=24):
     """Excess over an in-window model at the same r, binned by OOD distance."""
     r = runs[0]["r"]
@@ -112,7 +126,8 @@ def distance_summary(runs, metric="ce", n_bins=24):
 
 
 def plot(grouped, output, color_scale="log", separate_scales=False, metric="ce",
-         vmax_fixed=None, over_color="#00e0d8", contour=None, focus=None):
+         vmax_fixed=None, over_color="#00e0d8", contour=None, focus=None,
+         summary=True):
     widths = sorted(grouped, reverse=True)
     transform = ((lambda v: heat_transform(v, metric)) if color_scale == "log"
                  else (lambda v: v))
@@ -138,8 +153,19 @@ def plot(grouped, output, color_scale="log", separate_scales=False, metric="ce",
         focus_lo = np.percentile(all_values[all_values <= transform(np.array([focus]))[0]], 1)
         focus_hi = transform(np.array([focus]))[0]
 
-    fig = plt.figure(figsize=(13, 10), layout="constrained")
-    grid = fig.add_gridspec(3, 2, height_ratios=[1, 1, 0.85])
+    if summary:
+        fig = plt.figure(figsize=(13, 10), layout="constrained")
+        grid = fig.add_gridspec(3, 2, height_ratios=[1, 1, 0.85])
+    else:
+        # heatmaps only: fewer panels, so give the text room to breathe
+        with plt.rc_context():
+            pass
+        plt.rcParams.update({
+            "font.size": 15, "axes.titlesize": 16.5, "axes.labelsize": 15,
+            "xtick.labelsize": 13.5, "ytick.labelsize": 13.5,
+        })
+        fig = plt.figure(figsize=(13.8, 8.6), layout="constrained")
+        grid = fig.add_gridspec(2, 2)
     heat_axes = [fig.add_subplot(grid[i // 2, i % 2]) for i in range(4)]
 
     images = []
@@ -176,6 +202,21 @@ def plot(grouped, output, color_scale="log", separate_scales=False, metric="ce",
                 edgecolor="#1a1a1a" if focus is not None else "white",
                 linewidth=0.8 if focus is not None else 0.65, alpha=0.9,
             ))
+
+        # The row beginning at r=3 has a conspicuous low-error band extending
+        # into the fixed-point regime.  Outline the interval predicted by
+        # matching x*(r)=1-1/r to the lower period-two branch swept out by the
+        # training window [3, 3+w].
+        predicted_edge = predicted_fixed_point_overlap_edge(width)
+        for row, run in enumerate(runs):
+            if np.isclose(run["start"], 3.0):
+                ax.add_patch(Rectangle(
+                    (predicted_edge, row), 3.0 - predicted_edge, 1,
+                    fill=False, edgecolor="#00D5FF", linewidth=1.7,
+                    linestyle=(0, (3, 2)), alpha=1.0,
+                ))
+                break
+
         ax.set_title(f"Width {width:g} · {len(runs)} training windows")
         ax.set_xlabel(r"Evaluation parameter $r$")
         ax.set_ylabel("Training window (ordered by start)")
@@ -195,6 +236,14 @@ def plot(grouped, output, color_scale="log", separate_scales=False, metric="ce",
         colorbar = fig.colorbar(images[-1], ax=heat_axes, pad=0.015, shrink=0.9,
                                 extend="max" if (vmax_fixed is not None or focus is not None) else "neither")
         colorbar.set_label(color_label)
+
+    if not summary:
+        output = Path(output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(output, dpi=200, bbox_inches="tight")
+        fig.savefig(output.with_suffix(".pdf"), bbox_inches="tight")
+        plt.close(fig)
+        return
 
     summary_ax = fig.add_subplot(grid[2, :])
     colors = plt.get_cmap("viridis")(np.linspace(0.12, 0.88, len(widths)))
@@ -263,10 +312,13 @@ def main():
     parser.add_argument("--vmax", type=float, default=None,
                         help="fix the colour scale at 0..VMAX; cells above it "
                              "are drawn in a colour outside the map")
+    parser.add_argument("--no_summary", action="store_true",
+                        help="heatmap grid only; drop the distance-summary panel")
     args = parser.parse_args()
     grouped = load_runs(args.runs_dir, args.metric)
     plot(grouped, args.output, args.color_scale, args.separate_scales, args.metric,
-         vmax_fixed=args.vmax, contour=args.contour, focus=args.focus_below)
+         vmax_fixed=args.vmax, contour=args.contour, focus=args.focus_below,
+         summary=not args.no_summary)
     print(f"saved {args.output} and {Path(args.output).with_suffix('.pdf')}")
 
 

@@ -368,3 +368,39 @@ FAMILY_MAP_VEC = {"asym": asym_map_vec, "tilted": tilted_map_vec}
 
 def family_map_vec(x, R, p, family="asym"):
     return FAMILY_MAP_VEC[family](x, R, p)
+
+
+# ---------------------------------------------------------------------------
+# Henon family observed through x (a second, two-dimensional task family)
+# ---------------------------------------------------------------------------
+
+HENON_B = 0.3
+HENON_X_LO, HENON_X_HI = -1.5, 1.5   # fixed rescaling of x onto [0, 1]
+
+
+def iterate_henon_observed(u0, a, n_steps, b=HENON_B):
+    """x-coordinate of x' = 1 - a x^2 + y, y' = b x, rescaled to [0, 1] by
+    u = (x - HENON_X_LO) / (HENON_X_HI - HENON_X_LO); y is never observed.
+
+    Takes the same Uniform(0.05, 0.95) draw u0 that the logistic datasets use as
+    x0 and starts from x0 = u0 - 0.5 in [-0.45, 0.45], y0 = 0. With b = 0.3 and
+    a in [0, 1.4] these orbits stay bounded (x within [-1.29, 1.43], so u within
+    [0.07, 0.98]); the family has a stable fixed point below a ~ 0.37, period
+    doubling, and chaos from a ~ 1.06 interrupted by periodic windows."""
+    x, y = u0 - 0.5, 0.0
+    out = np.empty(n_steps + 1)
+    out[0] = x
+    for i in range(n_steps):
+        x, y = 1.0 - a * x * x + y, b * x
+        out[i + 1] = x
+    return (out - HENON_X_LO) / (HENON_X_HI - HENON_X_LO)
+
+
+def iterate_family_obs(x0, p, n_steps, family="logistic"):
+    """Observed trajectory of the families train_subset.py can train on.
+    "logistic" is exactly iterate_map(x0, p, n_steps)."""
+    if family == "logistic":
+        return iterate_map(x0, p, n_steps)
+    if family == "henon":
+        return iterate_henon_observed(x0, p, n_steps)
+    raise ValueError(f"unknown family {family!r}")

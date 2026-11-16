@@ -1,0 +1,6 @@
+Henon pilot (seed 0), CE in nats
+N=32: m=100: new 1.348 seen 0.342 (logistic new 2.075)  m=500: new 0.515 seen 0.400 (logistic new 0.771)  m=2000: new 0.435 seen 0.432 (logistic new 0.544)  m=8000: new 0.424 seen 0.435 (logistic new 0.535)
+N=128: m=100: new 0.729 seen 0.061 (logistic new 3.808)  m=500: new 0.123 seen 0.062 (logistic new 0.422)  m=2000: new 0.071 seen 0.065 (logistic new 0.050)  m=8000: new 0.064 seen 0.074 (logistic new 0.042)
+N=128 fixed point, a < 0.37: m=100: 0.222  m=500: 0.016  m=2000: 0.005  m=8000: 0.004
+N=128 period doubling, 0.37-1.06: m=100: 1.050  m=500: 0.107  m=2000: 0.018  m=8000: 0.006
+N=128 chaotic band, a > 1.06: m=100: 0.627  m=500: 0.270  m=2000: 0.248  m=8000: 0.247

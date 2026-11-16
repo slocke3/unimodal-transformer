@@ -1,0 +1,40 @@
+Window-complexity transfer analysis
+===================================
+Windows: 53
+Windows containing any positive-Lyapunov parameters: 8
+Response: same-width, same-target normalized log10(1 + CE) penalty
+
+Overall correlations:
+  complexity_mean_lambda vs mean_ood_penalty: n=53, Pearson=-0.264, Spearman=-0.221
+  complexity_chaos_fraction vs mean_ood_penalty: n=53, Pearson=-0.638, Spearman=-0.593
+  complexity_lambda vs mean_ood_penalty: n=53, Pearson=-0.605, Spearman=-0.595
+  complexity_max_lambda vs mean_ood_penalty: n=53, Pearson=-0.372, Spearman=-0.234
+  complexity_q90_lambda vs mean_ood_penalty: n=53, Pearson=-0.367, Spearman=-0.242
+  complexity_chaos_fraction vs mean_regular_ood_penalty: n=53, Pearson=-0.636, Spearman=-0.589
+  complexity_chaos_fraction vs mean_chaotic_ood_penalty: n=51, Pearson=-0.551, Spearman=-0.529
+  complexity_chaos_fraction vs mean_near_ood_penalty: n=53, Pearson=-0.355, Spearman=-0.372
+  center vs mean_ood_penalty: n=53, Pearson=-0.577, Spearman=-0.555
+
+Within-width correlations (chaos fraction vs OOD penalty):
+  width=1: n=4, Pearson=-0.987, Spearman=-0.775
+  width=0.5: n=7, Pearson=-0.605, Spearman=-0.612
+  width=0.25: n=14, Pearson=-0.734, Spearman=-0.609
+  width=0.125: n=28, Pearson=-0.649, Spearman=-0.608
+
+Descriptive confound check:
+  Partial Pearson correlation after removing quadratic window-center and width effects: -0.328
+  (Windows overlap and are not independent replicates; this is not an inferential p-value.)
+
+Group summaries (median [IQR]):
+  mean_ood_penalty:
+    no chaotic coverage: n=45, 1.254 [1.180, 1.338]
+    some chaotic coverage: n=8, 0.785 [0.650, 0.899]
+  mean_near_ood_penalty:
+    no chaotic coverage: n=45, 1.182 [1.090, 1.294]
+    some chaotic coverage: n=8, 0.829 [0.821, 0.854]
+  mean_regular_ood_penalty:
+    no chaotic coverage: n=45, 1.258 [1.197, 1.331]
+    some chaotic coverage: n=8, 0.786 [0.649, 0.915]
+  mean_chaotic_ood_penalty:
+    no chaotic coverage: n=45, 1.153 [1.031, 1.303]
+    some chaotic coverage: n=6, 0.751 [0.703, 0.782]

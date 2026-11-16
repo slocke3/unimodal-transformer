@@ -119,6 +119,10 @@ def main():
                         "window instead of the last one only. Validation and "
                         "every evaluation still read the last position, so "
                         "results stay directly comparable")
+    p.add_argument("--family", choices=["logistic", "henon"], default="logistic",
+                   help="task family. henon: x' = 1 - a x^2 + y, y' = 0.3 x, observing "
+                        "only x rescaled to [0,1] (src/maps.py); --start/--width/"
+                        "--full_lo/--full_hi then refer to a, e.g. full range [0, 1.4]")
     p.add_argument("--input_mode", choices=["bins", "continuous"], default="bins")
     p.add_argument("--output_mode", choices=["bins", "scalar"], default="bins")
     p.add_argument("--traj_len", type=int, default=150)
@@ -153,6 +157,10 @@ def main():
                         "the run (resolution of the overfitting curve in history.json)")
     p.add_argument("--batch_size", type=int, default=256)
     p.add_argument("--num_workers", type=int, default=2)
+    p.add_argument("--device_data", action="store_true",
+                   help="keep the training/validation tensors on the GPU and gather "
+                        "batches there (src/device_loader.py); same sampling scheme, "
+                        "much less per-step overhead")
     # eval
     p.add_argument("--r_eval_points", type=int, default=300)
     p.add_argument("--n_eval_per_r", type=int, default=30)
@@ -195,7 +203,7 @@ def main():
     noise = 0.0 if args.noise_bins <= 0 else 0.5 / args.noise_bins
     modes = dict(input_mode=args.input_mode, n_bins_in=n_in,
                  n_bins_out=n_out, output_mode=args.output_mode,
-                 synonyms=args.synonyms, input_noise=noise)
+                 synonyms=args.synonyms, input_noise=noise, family=args.family)
 
     torch.manual_seed(args.seed)
     if torch.cuda.is_available():
@@ -220,6 +228,9 @@ def main():
                                 burn_in=args.burn_in, traj_len=args.traj_len,
                                 n_bins=args.n_bins, seed=seed,
                                 all_positions=args.all_positions, **modes)
+        if args.device_data and device == "cuda":
+            from src.device_loader import DeviceLoader
+            return DeviceLoader(ds, args.batch_size, shuffle, device, seed=seed)
         return DataLoader(ds, batch_size=args.batch_size, shuffle=shuffle,
                           num_workers=args.num_workers, pin_memory=True,
                           persistent_workers=args.num_workers > 0)

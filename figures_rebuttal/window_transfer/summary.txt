@@ -1,0 +1,45 @@
+Restricted-window transfer: descriptive checks
+
+Runs: 53; distinct intervals: 53; interval-target pairs after seed averaging: 14658
+Frozen reference: runs_win_fix_ce
+Seeds averaged within intervals; no iid-pair significance tests.
+State control is context-token occupancy JS, not an oracle conditional model.
+
+nearest_transition_support_distance
+  Pooled: 0.439
+  Distance + width: 0.562
+  Distance + width + state: 0.276
+  Also target effects: 0.162
+  Target + window effects + state/distance: 0.010
+  Width 0.125: 0.417
+  Width 0.25: 0.435
+  Width 0.5: 0.533
+  Width 1: 0.403
+nearest_transition_support_distance_euclidean
+  Pooled: 0.411
+  Distance + width: 0.551
+  Distance + width + state: 0.278
+  Also target effects: 0.163
+  Target + window effects + state/distance: 0.005
+  Width 0.125: 0.394
+  Width 0.25: 0.403
+  Width 0.5: 0.497
+  Width 1: 0.371
+Within-window support_rho: median 0.120, IQR -0.096 to 0.230, positive 33/53
+Within-window state_rho: median 0.433, IQR 0.255 to 0.514, positive 47/53
+Window-mean support/penalty (all, n=53): rho=0.585
+Window-mean support/penalty (positive chaotic coverage, n=8): rho=0.857
+Window-mean support/penalty (zero chaotic coverage, n=45): rho=0.361
+
+Prespecified replication subset on COMMON regular targets:
+  width=0.125: regular mean penalty=1.324 (4 intervals); chaotic mean penalty=0.887 (4 intervals)
+  width=0.25: regular mean penalty=1.098 (2 intervals); chaotic mean penalty=0.688 (2 intervals)
+  width=0.5: regular mean penalty=0.930 (1 intervals); chaotic mean penalty=0.501 (1 intervals)
+  width=1: regular mean penalty=1.281 (1 intervals); chaotic mean penalty=0.336 (1 intervals)
+
+These controls distinguish pooled/between-window association from ordering
+targets within a fixed window. Fixed effects absorb all average target and
+window differences, including variation that could be part of the mechanism.
+Neither persistence nor disappearance establishes a causal explanation.
+Same-width normalization uses empirical trained models, not a Bayes error floor.
+Finite-trajectory support overlap does not require matching conditional probabilities.

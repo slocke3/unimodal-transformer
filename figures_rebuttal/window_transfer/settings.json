@@ -1,0 +1,7 @@
+{
+  "pairs": "figures/window_transition_similarity.csv",
+  "reference_runs": "runs_win_fix_ce",
+  "additional_runs": [],
+  "cache": "figures/window_transition_process_cache.npz",
+  "output_dir": "figures_rebuttal/window_transfer"
+}

@@ -1,0 +1,26 @@
+== Cross-entropy (64 output bins)  (seeds per arm: 8:4, 16:4, 32:4, 64:4, 128:4, 256:4)
+best N by m:  m=100:64  m=250:64  m=500:64  m=1000:64  m=2000:128  m=4000:256  m=8000:256
+N=  8  plateau 1.6  paper m* median    184  (seeds 189, 176, 226, 180)
+N= 16  plateau 1.1  paper m* median    191  (seeds 194, 176, 233, 188)
+N= 32  plateau 0.534  paper m* median    224  (seeds 246, 190, 274, 203)
+N= 64  plateau 0.0663  paper m* median    270  (seeds 277, 263, 319, 243)
+N=128  plateau 0.0469  paper m* median    430  (seeds 487, 363, 493, 373)
+N=256  plateau 0.0339  paper m* median    677  (seeds 831, 580, 685, 668)
+eps=1.6     m needed: 8:never  16:223  32:179  64:120  128:204  256:315
+eps=1.1     m needed: 8:never  16:7202  32:238  64:148  128:258  256:391
+eps=0.5     m needed: 8:never  16:never  32:never  64:231  128:405  256:626
+eps=0.2     m needed: 8:never  16:never  32:never  64:427  128:661  256:1101
+eps=0.1     m needed: 8:never  16:never  32:never  64:830  128:941  256:1698
+== Square loss (scalar output)  (seeds per arm: 8:4, 16:4, 32:4, 64:4, 128:4, 256:4)
+best N by m:  m=100:16  m=250:32  m=500:32  m=1000:64  m=2000:128  m=4000:256  m=8000:256
+N=  8  plateau 0.00103  paper m* median    182  (seeds 181, 183, 200, 174)
+N= 16  plateau 0.000265  paper m* median    185  (seeds 199, 189, 181, 161)
+N= 32  plateau 6.58e-05  paper m* median    169  (seeds 187, 161, 174, 164)
+N= 64  plateau 1.71e-05  paper m* median    547  (seeds 530, 564, 605, 262)
+N=128  plateau 4.76e-06  paper m* median    713  (seeds 960, 635, 582, 791)
+N=256  plateau 1.81e-06  paper m* median    723  (seeds 714, 745, 657, 731)
+eps=0.001   m needed: 8:never  16:<=100  32:141  64:372  128:552  256:569
+eps=0.0003  m needed: 8:never  16:230  32:189  64:576  128:740  256:690
+eps=0.0001  m needed: 8:never  16:never  32:247  64:715  128:968  256:822
+eps=3e-05   m needed: 8:never  16:never  32:never  64:906  128:1298  256:995
+eps=1e-05   m needed: 8:never  16:never  32:never  64:never  128:1695  256:2361
