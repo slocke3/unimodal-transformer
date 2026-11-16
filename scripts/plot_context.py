@@ -26,7 +26,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 MS = [100, 150, 250, 350, 500, 700, 1000, 1400, 2000, 4000, 8000]
-CTX = [10, 20, 25, 30, 35, 50, 60, 75]
+CTX = [1, 3, 5, 10, 20, 25, 30, 35, 50, 60, 75]
 SEEDS = [0, 1, 2]
 OLD_M = [100, 250, 500, 1000, 2000, 4000, 8000]   # where L=50 lives in the
                                                   # binning sweep rather than runs_ctx
@@ -77,8 +77,9 @@ for i, (key, rkey, lab) in enumerate(
             yr = [np.nanmean(z[f"in64_mse_m{m}_seed0_L{L}_{rkey}"] ** 2) for L in RL]
             ax.plot(RL, yr, "--", color=c, lw=1.2, alpha=0.75)
     ax.set_xscale("log"); ax.set_yscale("log")
-    ax.set_xticks([1, 2, 5, 10, 25, 50, 75])
-    ax.set_xticklabels(["1", "2", "5", "10", "25", "50", "75"])
+    ax.set_xticks([1, 3, 5, 10, 20, 35, 50, 75])
+    ax.set_xticklabels(["1", "3", "5", "10", "20", "35", "50", "75"])
+    ax.minorticks_off()
     ax.grid(alpha=0.25, lw=0.5)
     ax.set_ylabel(lab + "\nMean squared error", fontsize=10)
     for s in ("top", "right"):
@@ -103,8 +104,8 @@ for e in ("png", "pdf"):
 
 # ---- trained-at-length only, in the form of the task-diversity panel --------
 # Same two rows and same square-loss axis as taskdiv_overlay_converged, with
-# context length on x in place of task count. Linear in L: the ladder is
-# 10-75 and a log axis would compress the top, where the curves separate.
+# context length on x in place of task count. Log in L now that the ladder
+# reaches down to 1: on a linear axis 1, 3 and 5 would sit on top of each other.
 fig2, ax2 = plt.subplots(2, 1, figsize=(7.2, 8.2), sharex=True)
 for i, (key, lab) in enumerate(
         (("rms_at_train_r", "Seen tasks\n(evaluated at training $r$)"),
@@ -113,8 +114,9 @@ for i, (key, lab) in enumerate(
     for m, c in zip(MS, cols):
         a.plot(CTX, [trained(L, m, key) for L in CTX], "o-", color=c, ms=6,
                lw=1.7, label=str(m))
-    a.set_yscale("log"); a.grid(alpha=0.25, lw=0.5)
-    a.set_xlim(5, 80); a.set_xticks(CTX)
+    a.set_xscale("log"); a.set_yscale("log"); a.grid(alpha=0.25, lw=0.5)
+    a.set_xlim(0.85, 90); a.set_xticks([1, 3, 5, 10, 20, 35, 50, 75])
+    a.set_xticklabels(["1", "3", "5", "10", "20", "35", "50", "75"]); a.minorticks_off()
     a.set_ylabel(lab + "\nMean squared error", fontsize=10)
     for sp in ("top", "right"):
         a.spines[sp].set_visible(False)
