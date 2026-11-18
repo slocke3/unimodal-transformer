@@ -21,6 +21,14 @@ Arms are read at a converged checkpoint: 160k steps for 8-32 bins, 320k for
 
 Torch-free. Run from the repo root:
   python scripts/plot_taskdiv_gap.py
+  python scripts/plot_taskdiv_gap.py --regime_panel \
+      --out figures_taskdiv/taskdiv_gap_regime.pdf     # adds panel (c)
+
+--regime_panel adds (c): the cross-entropy crossover m* against input
+resolution, separately for fixed-point, periodic and chaotic-band maps (new-task
+average restricted to the evaluation-grid points in each regime) and for the
+whole family (black). m* of the median curve over seeds; bars span the per-seed
+m*. Same definition and numbers as scripts/rebuttal/plot_taskdiv_by_regime.py.
 """
 import argparse
 import os
@@ -63,6 +71,93 @@ PANELS = [
 ]
 
 
+LOG_MS = np.log10(MS)
+REGIMES = [("fixed point", r"$0.5\leq r<3$", 0.5, 3.0, "#0072B2"),
+           ("periodic", r"$3\leq r<3.57$", 3.0, 3.5699, "#E69F00"),
+           ("chaotic band", r"$r\geq3.57$", 3.5699, 4.01, "#CC79A7")]
+
+
+def mstar(c, min_drop=2.0):
+    """Log-scale midpoint between E(100) and mean(E(4000), E(8000))."""
+    c = np.asarray(c, float)
+    plateau = c[-2:].mean()
+    if c[0] / plateau < min_drop:
+        return None
+    h = np.sqrt(c[0] * plateau)
+    for i in range(len(c) - 1):
+        if c[i] >= h >= c[i + 1]:
+            f = (np.log(c[i]) - np.log(h)) / (np.log(c[i]) - np.log(c[i + 1]))
+            return 10 ** (LOG_MS[i] + f * (LOG_MS[i + 1] - LOG_MS[i]))
+    return None
+
+
+def regime_mstar(seeds, otag, stem, agg):
+    """{name: (bins, m*, lower err, upper err)} per regime and for all maps."""
+    series = {name: ([], [], [], []) for name, *_ in REGIMES + [("all r", "", 0, 0, "k")]}
+    for nbin, tmpl, _steps in ARMS:
+        curves = {name: [] for name in series}
+        for sd in seeds:
+            rows = {name: [] for name in series}
+            for m in MS:
+                v = load(tmpl, otag, m, f"{stem}_per_r", sd)
+                r = load(tmpl, otag, m, "r_grid", sd)
+                if v is None:
+                    break
+                rows["all r"].append(agg(v))
+                for name, _, lo, hi, _ in REGIMES:
+                    rows[name].append(agg(v[(r >= lo) & (r < hi)]))
+            if len(rows["all r"]) == len(MS):
+                for name in series:
+                    curves[name].append(rows[name])
+        for name, (xs, ys, lo, hi) in series.items():
+            if not curves[name]:
+                continue
+            med = mstar(np.median(curves[name], 0))
+            per = [v for v in (mstar(c) for c in curves[name]) if v]
+            if med:
+                xs.append(nbin); ys.append(med)
+                lo.append(max(med - min(per), 0) if per else 0)
+                hi.append(max(max(per) - med, 0) if per else 0)
+    return series
+
+
+def regime_panel(ax, seeds, objectives, title, legend=True):
+    """m* against input bins, per regime and overall, for one or both losses
+    (cross-entropy solid, square loss dashed when both are drawn)."""
+    both = len(objectives) == 2
+    for otag, stem, agg in objectives:
+        series = regime_mstar(seeds, otag, stem, agg)
+        ls = "--" if (both and otag == "mse") else "-"
+        for name, rng, _, _, col in REGIMES + [("all r", "", 0, 0, "k")]:
+            xs, ys, lo, hi = series[name]
+            overall = name == "all r"
+            eb = ax.errorbar(xs, ys, yerr=[lo, hi], color=col, lw=2.6 if overall else 2.0,
+                             marker="o" if overall else "s", ms=7, capsize=3,
+                             elinewidth=1.1, zorder=5 if overall else 3,
+                             mfc="white" if ls == "--" else col,
+                             label=(("all maps" if overall else f"{name}, {rng}")
+                                    if ls == "-" else None))
+            eb[-1][0].set_linestyle(ls) if eb[-1] else None
+            eb[0].set_linestyle(ls)
+            print(f"  m* {otag:>4s} {name:>12s}: " + ", ".join(f"{x}:{y:.0f}" for x, y in zip(xs, ys)))
+    ax.set_xscale("log", base=2); ax.set_yscale("log")
+    ax.set_xticks([a for a, *_ in ARMS]); ax.set_xticklabels([str(a) for a, *_ in ARMS])
+    ax.set_yticks([200, 400, 800, 1600]); ax.set_yticklabels(["200", "400", "800", "1600"])
+    ax.set_ylim(130, 2400)              # shared across regime panels
+    ax.minorticks_off()
+    ax.set_xlabel("input bins $N$")
+    ax.set_ylabel(r"crossover task count $m^*$")
+    ax.set_title(title, pad=12 if not both else 46)
+    ax.grid(alpha=0.18, lw=0.5)
+    h, l = ax.get_legend_handles_labels()
+    if both:
+        h += [plt.Line2D([], [], color="0.25", lw=2, marker="s", ms=7),
+              plt.Line2D([], [], color="0.25", lw=2, ls="--", marker="s", ms=7, mfc="white")]
+        l += ["cross-entropy", "square loss"]
+    if legend:
+        ax.legend(h, l, loc="upper left", fontsize=12.5, framealpha=0.92)
+
+
 def load(tmpl, otag, m, key, seed=0):
     p = tmpl.format(o=otag, m=m, s=seed) + "/eval_per_r.npz"
     if not os.path.exists(p):
@@ -88,11 +183,24 @@ def main():
                          "31,400 of the 32,000 reach the optimizer.")
     ap.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2, 3],
                     help="seeds to overlay as thin lines; the median is heavy")
+    ap.add_argument("--regime_panel", choices=["ce", "both", "grid"], default=None,
+                    help="add m* by dynamical regime: 'ce' = panel (c), cross-entropy "
+                         "only; 'both' = panel (c), cross-entropy solid and square loss "
+                         "dashed; 'grid' = 2x2, a second row with each loss's m* under "
+                         "its own panel")
     a = ap.parse_args()
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
 
     colors = plt.cm.viridis(np.linspace(0.06, 0.92, len(ARMS)))
-    fig, axes = plt.subplots(1, 2, figsize=(14.0, 6.7))
+    if a.regime_panel == "grid":
+        fig, grid = plt.subplots(2, 2, figsize=(14.0, 12.4),
+                                 gridspec_kw={"height_ratios": [1, 0.8]})
+        axes = list(grid[0]) + list(grid[1])
+    elif a.regime_panel:
+        fig, axes = plt.subplots(1, 3, figsize=(20.5, 6.7),
+                                 gridspec_kw={"width_ratios": [1, 1, 0.85]})
+    else:
+        fig, axes = plt.subplots(1, 2, figsize=(14.0, 6.7))
 
     for ax, (otag, title, ylab, stem, agg) in zip(axes, PANELS):
         for (nbin, tmpl, _steps), c in zip(ARMS, colors):
@@ -147,7 +255,18 @@ def main():
     axes[1].legend(style, ["new tasks", "seen tasks"],
                    loc="lower left", framealpha=0.92)
 
-    for label, ax in zip(("(a)", "(b)"), axes):
+    ce = ("bins", "ce", lambda v: np.nanmean(v))
+    sq = ("mse", "rms", lambda v: np.nanmean(v ** 2))
+    if a.regime_panel == "ce":
+        regime_panel(axes[2], a.seeds, [ce], "Crossover by regime (cross-entropy)")
+    elif a.regime_panel == "both":
+        regime_panel(axes[2], a.seeds, [ce, sq], "Crossover by regime")
+    elif a.regime_panel == "grid":
+        regime_panel(axes[2], a.seeds, [ce], "Crossover by regime, cross-entropy")
+        regime_panel(axes[3], a.seeds, [sq], "Crossover by regime, square loss",
+                     legend=False)
+
+    for label, ax in zip(("(a)", "(b)", "(c)", "(d)"), axes):
         ax.text(-0.14, 1.17, label, transform=ax.transAxes,
                 fontsize=17, fontweight="bold", va="top", ha="left")
 
