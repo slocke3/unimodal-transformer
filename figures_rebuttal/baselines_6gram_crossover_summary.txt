@@ -1,0 +1,14 @@
+m* (median curves over seeds [0, 1, 2, 3]); '-' = undefined (drop < 2x)
+obj     N  transformer     6-gram
+ce      8          182        177
+ce     16          188        180
+ce     32          204        200
+ce     64          273        259
+ce    128          413        450
+ce    256          673        706
+mse     8            -          -
+mse    16            -        171
+mse    32          165        167
+mse    64          543        573
+mse   128          740        882
+mse   256          726       1358

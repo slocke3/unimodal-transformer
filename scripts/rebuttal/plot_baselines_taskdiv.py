@@ -77,19 +77,29 @@ def main():
     ap.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2, 3])
     ap.add_argument("--bl_dir", default="runs_rebuttal_baselines")
     ap.add_argument("--out", default="figures_rebuttal/baselines_taskdiv.pdf")
+    ap.add_argument("--ncols", type=int, default=None,
+                    help="panels per row; resolutions wrap onto further rows, "
+                         "all cross-entropy rows first, then all square-loss rows")
     a = ap.parse_args()
     os.makedirs(os.path.dirname(a.out), exist_ok=True)
 
-    nc = len(a.ns)
-    fig, axes = plt.subplots(2, nc, figsize=(5.6 * nc + 1, 10.5), squeeze=False)
+    nc = a.ncols or len(a.ns)
+    nblk = -(-len(a.ns) // nc)          # rows per objective
+    nrows = 2 * nblk
+    fig, axes = plt.subplots(nrows, nc, figsize=(5.6 * nc + 1, 5.25 * nrows),
+                             squeeze=False)
+    for j in range(len(a.ns), nblk * nc):   # unused slots in a ragged last row
+        for ro in range(2):
+            axes[ro * nblk + j // nc, j % nc].axis("off")
     lines = []
     for j, n in enumerate(a.ns):
         d = collect(n, a.seeds, a.bl_dir)
         ns_ = len(d["tf_ce_new"])
         lines.append(f"== N={n} ({ns_} seeds)")
-        for row, (obj, ylab) in enumerate([("ce", "new-task cross-entropy (nats)"),
-                                           ("mse", "new-task mean squared error")]):
-            ax = axes[row, j]
+        for ro, (obj, ylab) in enumerate([("ce", "new-task cross-entropy (nats)"),
+                                          ("mse", "new-task mean squared error")]):
+            row, col = ro * nblk + j // nc, j % nc
+            ax = axes[row, col]
             tf = d[f"tf_{obj}_new"]
             ax.fill_between(MS, tf.min(0), tf.max(0), color="0.15", alpha=0.15, lw=0)
             ax.plot(MS, np.median(tf, 0), "-o", color="0.1", lw=2.6, ms=6,
@@ -102,11 +112,11 @@ def main():
                         lw=2.0, ms=5, label=f"{k}-gram (last {k} token{'s' if k > 1 else ''})")
             ax.set_xscale("log"); ax.set_yscale("log")
             ax.grid(alpha=0.18, lw=0.5, which="both")
-            if row == 0:
+            if row == 0 or nblk > 1:
                 ax.set_title(f"{n} input bins")
-            if row == 1:
+            if row == nrows - 1:
                 ax.set_xlabel(r"training tasks $m$")
-            if j == 0:
+            if col == 0:
                 ax.set_ylabel(ylab)
             for i, m in enumerate(MS):
                 if m in (100, 1000, 8000):
@@ -115,8 +125,9 @@ def main():
                     if obj == "mse":
                         vals.append(f"lsr {np.median(d['lsr_mse'], 0)[i]:.3g}")
                     lines.append(f"  {obj:3s} m={m:<5d} " + "  ".join(vals))
-    h, l = axes[1, 0].get_legend_handles_labels()
-    fig.legend(h, l, loc="lower center", ncol=4, bbox_to_anchor=(0.5, -0.06),
+    h, l = axes[0, 0].get_legend_handles_labels()
+    fig.legend(h, l, loc="lower center", ncol=4,
+               bbox_to_anchor=(0.5, -0.06 if nrows == 2 else -0.03),
                framealpha=0.95)
     fig.tight_layout()
     fig.savefig(a.out, dpi=200, bbox_inches="tight")

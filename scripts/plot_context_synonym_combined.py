@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 MS_CONTEXT = np.array(
     [100, 150, 250, 350, 500, 700, 1000, 1400, 2000, 4000, 8000]
 )
-CONTEXTS = [10, 20, 25, 30, 35, 50, 60, 75]
+CONTEXTS = [1, 3, 5, 10, 20, 50]
 SEEDS = [0, 1, 2]
 OLD_M = {100, 250, 500, 1000, 2000, 4000, 8000}
 
@@ -151,6 +151,7 @@ for context, color in zip(CONTEXTS, context_colors):
 
 ax_context.set_xscale("log")
 ax_context.set_yscale("log")
+ax_context.set_ylim(top=8e-2)  # room for the style legend above L = 1
 ax_context.set_xlabel("number of training tasks (distinct $r$ values)")
 ax_context.set_ylabel("mean squared error")
 ax_context.set_title("Context length and task diversity", fontsize=12)

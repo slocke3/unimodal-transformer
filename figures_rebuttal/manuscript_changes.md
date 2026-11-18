@@ -22,26 +22,16 @@ Reviewer codes: **P** = pqmj, **F** = FWzs, **V** = 68V6.
    - the invariant measure decides which inputs each task shows, so tasks differ in their inputs as well as their rule;
    - tokenization is not observation noise: it is deterministic, identical at every step, does not average out over the context, and sets a floor that more context cannot remove.
 
-   Forward-reference the identifiability and noise-vs-bins appendices. *(V: "isn't this just ICL regression?"; novelty)* **[text]**
+   Forward-reference the noise-vs-bins appendix (identifiability dropped 2026-11-17). *(V: "isn't this just ICL regression?"; novelty)* **[text]**
 
 ### Introduction: why the logistic family (L43–50)
-4. **L48, the r < 0.5 sentence.** Replace "thus we exclude r<0.5" with the reason:
-   - below r = 1 the orbit shrinks by about a factor r per step, so the smaller r is, the faster it reaches 0;
-   - at r ≤ 0.5, 96–97% of 64-bin windows are all zeros, so these maps are indistinguishable and add no diversity;
-   - the cutoff is a convention;
-   - restricting to r ≥ 1 raises every error by the same ~16% and leaves m* unchanged (new appendix check).
-
-   *(V: why exclude r < 0.5)* **[text]**
+4. **r < 0.5 (L48): DONE (2026-11-16).** Orbits shrink by about a factor r per step and soon stop carrying information about r; exclude r < 0.5 (over 96% all-zero windows at 64 bins); the cutoff is a convention, ideally followed by "restricting evaluation to r ≥ 1 leaves m\* unchanged". The rebuttal reply carries the numbers: ≈16% uniform rise; m\* identical on the CE arms and within 8 tasks on the square-loss arms. *(V: why exclude r < 0.5)*
 5. **Add 1–2 sentences on why a single family.** The logistic family has exact dynamical ground truth (Lyapunov exponent, invariant measure, periodic windows, conjugacies), which is what lets us explain the model's behaviour. State the scope limitation plainly here and in the Limitations. *(P/F/V: only one system)* **[text]**
-6. **L50: say why we tokenize.**
-   - With noise-free real values, two observations give r exactly (r = x′/(x(1−x))), and a continuous-input model reaches ~5e-7 error. So finite resolution is the object of study, as in Chronos-style models.
-   - Fix the typo "depends on the how much data".
-
-   *(V: why tokenize)* **[text]**
+6. **Why tokenize (L50): DONE (2026-11-16).** With noise-free real values two observations give r exactly; we instead tokenize as Chronos does. Typo fixed. Suggested: the "evidence … depends on" sentence should say it depends on the dynamics as well as on context length, and the range should be r ∈ [0.5, 4]. *(V: why tokenize)*
 
 ### Introduction: summary of findings (L52)
 7. **Reword the resolution sentence** "Finer tokenizations require more training maps…" to match item 1. *(P)* **[text]**
-8. **Context sentence.** Add why context saturates: the last 4–6 tokens carry everything the context says about the next state, and the model does use that history. *(F: context length)* **[text]**
+8. **Context sentence: DONE (2026-11-17).** "Context length, in contrast, lowers the error only until the context covers the last few tokens, which is all a count-based predictor needs; longer contexts reach the same high-diversity error floor but delay the crossover." Simon: say "last few tokens", not "ten tokens". *(F: context length)*
 9. **Narrow the r = 3 sentence** ("models trained just above the first period-doubling bifurcation…"). The transfer is seen only for windows starting at r = 3, and state overlap is necessary but not sufficient (see item 30). *(P: r = 3)* **[text]**
 10. **Add the new findings:**
     - the baselines and probe (the model infers the task from context; the crossover itself is partly a coverage effect);
@@ -61,7 +51,7 @@ Reviewer codes: **P** = pqmj, **F** = FWzs, **V** = 68V6.
 
 ### Contributions (L72–76)
 14. **L72:** "model behavior can be explained by known properties of each map". Name them: orbit structure (identifiability), Lyapunov exponent (chaotic coverage), represented transitions. *(P: results not connected to the dynamics)* **[text]**
-15. **L74:** reword the resolution claim (item 1), and change "context length leaves the attainable error unchanged" to include the identifiability explanation. *(P, F)* **[text]**
+15. **L74:** reword the resolution claim (item 1). Context half DONE (2026-11-17): "and context length lowers the attainable error only until it covers the last few tokens, beyond which it delays the crossover." *(P, F)* **[text: resolution half]**
 16. **L76:** narrow the r = 3 claim (item 30), and add that transfer follows represented transitions, not parameter distance (ρ = 0.07) or state occupancy alone (conjugate maps). *(P, F Q1)* **[text]**
 17. **New item:** the transformer beats transition counting and parameter estimation past the crossover and tracks the true next state in matched-final-token pairs. The counters also show a crossover, so the crossover reflects task coverage. *(F: algorithm and baselines)* **[fig ready]**
 
@@ -76,19 +66,9 @@ Reviewer codes: **P** = pqmj, **F** = FWzs, **V** = 68V6.
 
 ### Methods: tokenization (L129–142)
 19. **L138, "We choose uniform bins…".** Expand with the why-tokenize point (item 6) if it isn't in the introduction. *(V)* **[text]**
-20. **Synonym construction details** (here or at L191):
-    - each occurrence of a bin draws one of its j synonyms uniformly at random, so the bin is token // j;
-    - training contexts are drawn once, when the dataset is built; evaluation contexts are drawn fresh;
-    - synonyms are input-side only: targets and loss use the original 64 output bins (the scalar x for MSE).
-
-    *(P: synonym ambiguity)* **[text]**
-21. **L142: why the output is fixed at 64 bins.** The output partition is fixed at 64 bins for every input resolution, so CE measures the same prediction problem across input resolutions, and only the input resolution varies. Chronos-style models also use a fixed output vocabulary. The scalar-output models take tokenized input and predict x, which isolates input resolution from output resolution. *(P: is the 64-bin output standard?)* **[text]**
-22. **L142: say which loss each experiment uses and where the other appears.**
-    - task diversity: both (Fig. 2);
-    - context length: MSE (Fig. 3a), with CE in the appendix if available;
-    - window transfer: CE in the main text, MSE discussed in the main text (item 31).
-
-    *(P: CE vs MSE reported inconsistently)* **[text; decide whether to add a CE context arm]**
+20. **Synonym construction details: DONE (2026-11-16)** in the L191 paragraph. Synonyms are drawn independently for every occurrence in every window, fixed when the training set is built and drawn fresh for evaluation. They are many-to-one, so no information is added or lost, and they apply to inputs only (the loss stays on the 64 output bins). Seed-0 m\*: synonyms 254–312 for vocabularies 64–1024; at a vocabulary of 256, 256 bins gives 831 and j = 4 gives 312. Keep seed-0 numbers in this panel because the synonym arm has one seed. *(P: synonym ambiguity)*
+21. **Why the output is fixed at 64 bins: DONE (2026-11-16).** One sentence added at L142: fixing the output (64 bins or a real number) means every model is scored on the same target regardless of input resolution, so errors are directly comparable. "Is it standard?" and "why 64?" go in the rebuttal reply only: it is a deliberate control (Chronos shares one vocabulary for inputs and outputs; verify before citing), and 64 is intermediate in the 8–256 range. *(P: is the 64-bin output standard?)*
+22. **Which loss each experiment uses: DEFERRED (2026-11-16)**; placement undecided. Draft sentence: "We report task diversity under both objectives (Fig. 2), the context-length sweep under square loss and the synonym control under cross-entropy (Fig. 3), and restricted-support transfer under cross-entropy in the main text and square loss in App. window-mse." Also name cross-entropy in the Fig. 3b caption. Still open: no CE context sweep in the current manuscript. *(P: CE vs MSE)*
 
 ### Methods: architecture (L144–147)
 23. **Point to the capacity ablation** (new appendix section). Chase's width sweep (32 to 256, 0.05M to 3.2M parameters, MSE, 8–256 bins, one seed) shows the crossover and the resolution reversal at every width. Width 256 matches the default width 128, so the default is past capacity saturation; only width 32 is limited, at 128–256 bins. Depth and training length were not varied. Dropout 0.1 is already stated here. *(V: no capacity ablation)* **[fig ready: Chase's width figure]**
@@ -120,19 +100,19 @@ Reviewer codes: **P** = pqmj, **F** = FWzs, **V** = 68V6.
     Fig. 2 caption (L176): reword "Finer input partitions move the transition to larger m". Add the own-floor panels to Fig. 2, or replace it with them. *(P)* **[fig ready: `figures_rebuttal/taskdiv_resolution_tradeoff` panels c and f; decide: replace or add]**
 
 ### Results: context length (L186–188, Fig. 3a)
-28. **Explain the saturation.**
-    - Replace L188 ("Surprisingly, longer context does not seem to help") with the identifiability explanation: the information the last K tokens carry about the next state saturates by K ≈ 4–6 at every resolution. A fixed point gives one repeated token, a period-p orbit gives p tokens, and in chaos expansion at rate λ erases older within-bin information.
-    - Add that the model does use its history (it beats the 1-gram at every m; probe).
-    - Add short contexts using Chase's sweep (L = 1, 3, 5, 10, 20, 25, 30, 35, 50, 60, 75; three seeds), which can replace Fig. 3a. L = 1 sits at the 1-gram error (1.5e-2 vs 1.45e-2); L = 3 and 5 show no crossover (seen ≈ new); L ≥ 10 share one floor (~1.7e-5); the knee between 5 and 10 matches identifiability.
-    - Revise L188 ("no consistent trend in L"): in Chase's sweep the crossover moves to larger m as L grows (L = 10 near 150, L = 20–35 near 250–500, L = 50–75 near 700), though the seed ranges are wide.
-    - **Flag:** L = 3 and 5 are worse than k-gram counters using the same or less context (m = 8000: L = 3 ≈ 3e-4 vs 2-token counter 4.9e-5; L = 5 ≈ 6e-5 vs 4-token counter 2.2e-5). That matches the dropout artifact. Ask Chase whether these runs used dropout 0.1; if so, rerun L = 3 and 5 with dropout 0 (L = 1 and L ≥ 10 are fine).
+28. **Context paragraph and Fig. 3a: DONE (2026-11-17).**
+    - Fig. 3a now shows L ∈ {1, 3, 5, 10, 20, 50} from Chase's sweep (`scripts/plot_context_synonym_combined.py`, y-limit raised for the legend). No appendix with all eleven lengths (Simon).
+    - L186–188 rewritten: L = 1 is close to the last-token counter; L = 3 and 5 show no crossover and plateau higher (no floor numbers, dropout 0.1); from L = 10 on all lengths share the floor, matching the 4–6 tokens after which the counters stop improving (cites `app:baselines`); longer contexts delay the crossover, m\* ≈ 130 at L = 10 to ≈ 530 at L = 50 (median curves; L = 20 ≈ 210).
+    - Identifiability analysis dropped from the paper (Simon): the counters make the same point.
+    - Not in the text: the delay comes almost entirely from fixed-point maps with 1 ≤ r < 2 (m = 250: 4e-5 at L = 10 vs 9e-3 at L = 50; periodic and chaotic flat across L ≥ 10). Mechanism unknown. `scratchpad/ctx_regime.py`.
+    - Caveat for replies: L = 5 (≈ 6e-5) is worse than the 4-token counter (2.2e-5), so the counter match holds for where saturation happens, not for each short L.
 
-    *(F: why context doesn't help, L ∈ {1, 2, 5}; P: dynamics)* **[fig ready: `figures_rebuttal/identifiability`; short contexts: needs run or Chase]**
+    *(F: why context doesn't help, L ∈ {1, 2, 5}; P: dynamics)*
 
 ### Results: synonyms and wrap-up (L191–195, Fig. 3 caption L200)
 - **L191:** add the synonym details (item 20) if they aren't in the Methods, and refer to the m\* definition (item 24). **[text]**
-- **L193:** reword "Finer observation resolution also increases the diversity required" (item 1). **[text]**
-- **L200 caption:** make the m\* definition match item 24, and note one seed for panel b. **[text]**
+- **L193: DONE (2026-11-17).** "Beyond L = 10, longer context leaves the high-diversity error floor unchanged but delays the crossover. Finer observation resolution also delays the crossover, but ultimately enables substantially lower prediction error."
+- **L200 caption: DONE (2026-11-17).** Title "Effects of context length and vocabulary size."; (a) lists the six lengths and says L ≤ 5 show no crossover, L ≥ 10 share the floor, longer reach it at larger m; (b) names cross-entropy and one seed. Remove Simon's "(I updated the figure…)" note before submission.
 
 ### Window transfer (L203–242, Fig. 4 at L216–223)
 29. **After L225, bring the appendix's main result into the main text** (2–3 sentences):
@@ -162,7 +142,7 @@ Reviewer codes: **P** = pqmj, **F** = FWzs, **V** = 68V6.
     *(F Q1)* **[fig ready: `paper_iclr2027/family_overlap.png` top right + `figures_asym2/conjugacy_curve.png` left; combine into one figure; one seed]**
 
 ### Discussion (L246–255)
-33. **L249: correct a sentence the new results contradict.** "even though longer contexts carry more evidence about the generating map" is wrong for the next state: beyond 4–6 tokens they don't (identifiability). Reword the resolution sentence too (item 1). *(F)* **[text]**
+33. **L249.** Context half DONE (2026-11-17): "Context length, by contrast, lowers the error only until the context covers the last few tokens, the same history that count-based predictors need; longer contexts achieve the same minimum error." Still to do: reword the resolution sentence (item 1). *(F)* **[text: resolution half]**
 34. **L251: answer the two hypotheses.**
     - Replace or extend "a mix of strategies (parroting vs operator estimation)".
     - Neither pure hypothesis fits. The model infers the task from context (baselines, probe), but only among token processes covered in training: it needs ~10³ tasks, fails just outside its training support, and fails on conjugate maps.
@@ -181,8 +161,11 @@ Reviewer codes: **P** = pqmj, **F** = FWzs, **V** = 68V6.
 36. m\* definition and the r ≥ 1 robustness check. *(P, V)* **[text + small table]**
 37. Resolution tradeoff, own-floor vs absolute (if not in Fig. 2). *(P)* **[fig ready]**
 38. Baselines (k-grams, least-squares r̂) and the matched-final-token probe. *(F)* **[fig ready + table]**
-39. Identifiability analysis. *(F, P)* **[fig ready]**
-40. Short contexts L = 1, 3, 5 (Chase's sweep). *(F)* **[fig ready, pending dropout check for L = 3, 5]**
+    - Appendix figure: `baselines_taskdiv_all_3col` (all six resolutions, 3 across; CE rows then MSE rows). If moved to the main text, show 16/64/256 only (`baselines_taskdiv`).
+    - Candidate figure: `baselines_6gram_crossover` (transformer vs 6-gram per resolution, CE | MSE). Under CE the counter's m\* matches the transformer's at every resolution (177–706 vs 182–673), so crossover location reflects transition coverage; past it the transformer is 2–4× better at ≥ 64 bins.
+    - Not doing (2026-11-17): counters matched to each context length (no CE context sweep; L = 3, 5 dropout confound), smoothed/synonym counters, the Bayes (training-task vs family posterior) comparison. Bayes comparison = future work / ICML.
+39. ~~Identifiability analysis.~~ Dropped (2026-11-17): the counters carry the point.
+40. ~~Short contexts appendix.~~ Not needed (2026-11-17): L = 1, 3, 5 are in the main Fig. 3a; no full-sweep appendix.
 41. Every-position loss. *(V)* **[fig ready: `figures_taskdiv/allpos`]**
 42. Noise vs bins: tokenization is not noise. *(V, F noise)* **[fig ready: `figures_taskdiv/noise_vs_bins`]**
 43. Conjugate maps and transition coverage. *(F Q1)* **[figs exist; combine]**
@@ -207,8 +190,8 @@ Reviewer codes: **P** = pqmj, **F** = FWzs, **V** = 68V6.
 | **P** "finer needs more maps" misleading | 1, 7, 15, 27, 37 | fig ready |
 | **F** limited novelty | as P incremental | text |
 | **F** threshold governed by general dynamics? higher dimensions, more parameters, noise | 29, 35, 42 | text; partial |
-| **F** why doesn't context help? | 8, 28, 33, 39 | fig ready |
-| **F** L ∈ {1, 2, 5}? | 28, 40 | Chase's sweep; dropout check for L = 3, 5 |
+| **F** why doesn't context help? | 8, 28, 33, 38 | done (needs the baselines appendix, 38) |
+| **F** L ∈ {1, 2, 5}? | 28 | done: L = 1, 3, 5 in Fig. 3a |
 | **F** what algorithm? | 13, 17, 26, 34, 38 | fig ready |
 | **F** suggested baselines | 17, 26, 38 | fig ready |
 | **F** matched final states | 26, 38 | table ready |
@@ -222,9 +205,8 @@ Reviewer codes: **P** = pqmj, **F** = FWzs, **V** = 68V6.
 
 ## Part 3. Blocking items
 
-- **Chase:** the dropout setting of his L = 3 and 5 runs (28, 40). Capacity is answered (44).
+- **Chase:** nothing outstanding. Short contexts and capacity come from his runs (40, 44); his L = 3 and 5 runs used dropout 0.1, so don't read much into their exact floors.
 - **Decisions:** Fig. 2 replace vs add (27); where λ and the invariant measure go (18, 29); MSE heatmap to the main text (31); CE context arm (22).
 - **Checks before writing:**
-  - repeated-token transitions for the r = 3 windows (30), CPU only;
-  - the short-context rerun if Chase has nothing (~$5–9).
+  - repeated-token transitions for the r = 3 windows (30), CPU only.
 - **New figure to build:** the conjugate-map panel combining occupancy/transition overlap with CE along R = 1 (32, 43). Uses saved data; no runs.
