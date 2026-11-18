@@ -133,9 +133,9 @@ def main():
     fig.legend(res + sty, [f"{n} bins" for n in NS] + ["new tasks", "seen tasks"],
                loc="lower center", ncol=8, bbox_to_anchor=(0.5, -0.05), frameon=False)
     fig.tight_layout()
-    name = "taskdiv_by_regime_bands" if a.bands else "taskdiv_by_regime"
+    fname = "taskdiv_by_regime_bands" if a.bands else "taskdiv_by_regime"
     for e in ("pdf", "png"):
-        fig.savefig(f"{OUT}/{name}.{e}", dpi=200, bbox_inches="tight")
+        fig.savefig(f"{OUT}/{fname}.{e}", dpi=200, bbox_inches="tight")
 
     # ---- m* against resolution, one line per regime --------------------------
     fig, axes = plt.subplots(1, 2, figsize=(14, 5.8))
@@ -180,7 +180,7 @@ def main():
     with open(f"{OUT}/taskdiv_mstar_by_regime_summary.txt", "w") as f:
         f.write("\n".join(lines) + "\n")
     print("\n".join(lines))
-    print(f"wrote {OUT}/{name}.*, {OUT}/taskdiv_mstar_by_regime.*")
+    print(f"wrote {OUT}/{fname}.*, {OUT}/taskdiv_mstar_by_regime.*")
 
 
 if __name__ == "__main__":
